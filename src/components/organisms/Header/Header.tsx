@@ -1,3 +1,4 @@
+// Header.tsx
 import { useState } from 'react'
 import AppBar from '@mui/material/AppBar'
 import Toolbar from '@mui/material/Toolbar'
@@ -23,7 +24,11 @@ export default function Header() {
     const [open, setOpen] = useState(false)
 
     const BRAND_BLUE = '#173760'
-    const BRAND_BLUE_ALT = '#406B8E'
+    // === colores agregados (mínimo cambio) ===
+    const CALL_BLUE = '#4FB5FF'
+    const CALL_BLUE_HOVER = '#3AA9FB'
+    const WHATSAPP_GREEN = '#1FC65C'
+    const WHATSAPP_GREEN_HOVER = '#1EC65C'
 
     return (
         <AppBar
@@ -86,13 +91,14 @@ export default function Header() {
                 <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1 }}>
                     <Button
                         size="small"
-                        variant="outlined"
+                        variant="contained" // ← antes: outlined
                         sx={{
                             color: '#fff',
-                            borderColor: 'rgba(255,255,255,0.5)',
+                            // ↓ azul claro como en Hero
+                            bgcolor: CALL_BLUE,
                             py: 0.5,
                             px: 1.25,
-                            '&:hover': { borderColor: '#fff', backgroundColor: 'rgba(255,255,255,0.08)' },
+                            '&:hover': { bgcolor: CALL_BLUE_HOVER },
                         }}
                         startIcon={<CallIcon fontSize="small" />}
                         onClick={() => window.open('tel:+56912345678', '_self')}
@@ -104,10 +110,11 @@ export default function Header() {
                         variant="contained"
                         sx={{
                             color: '#fff',
-                            bgcolor: BRAND_BLUE_ALT,
+                            // ↓ verde WhatsApp como en Hero
+                            bgcolor: WHATSAPP_GREEN,
                             py: 0.5,
                             px: 1.25,
-                            '&:hover': { bgcolor: '#355E81' },
+                            '&:hover': { bgcolor: WHATSAPP_GREEN_HOVER },
                         }}
                         startIcon={<WhatsAppIcon fontSize="small" />}
                         onClick={() => window.open('https://wa.me/56912345678', '_blank', 'noopener')}

@@ -1,3 +1,4 @@
+// Hero.tsx
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
@@ -9,6 +10,11 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 
 export default function Hero() {
     const BRAND_BLUE = '#173760'
+    // === colores agregados (mínimo cambio) ===
+    const CALL_BLUE = '#4FB5FF'
+    const CALL_BLUE_HOVER = '#3AA9FB'
+    const WHATSAPP_GREEN = '#25D366'
+    const WHATSAPP_GREEN_HOVER = '#1EC65C'
 
     return (
         <Box
@@ -28,16 +34,16 @@ export default function Hero() {
                         sx={{
                             position: 'relative',
                             p: { xs: 2, md: 4 },
-                            borderRadius: { xs: 0, md: 3 },                 // sin bordes redondeados en mobile
+                            borderRadius: { xs: 0, md: 3 },
                             overflow: 'hidden',
                             bgcolor: 'transparent',
-                            boxShadow: { xs: 'none', md: '0 10px 30px rgba(0,0,0,.25)' }, // sin sombra en mobile
+                            boxShadow: { xs: 'none', md: '0 10px 30px rgba(0,0,0,.25)' },
                         }}
                     >
                         {/* Vidrio SOLO en desktop/tablet */}
                         <Box
                             sx={{
-                                display: { xs: 'none', md: 'block' },          // <- oculto en mobile
+                                display: { xs: 'none', md: 'block' },
                                 position: 'absolute',
                                 inset: 0,
                                 left: { md: '40%' },
@@ -79,7 +85,12 @@ export default function Hero() {
                                     <Button
                                         variant="contained"
                                         color="primary"
-                                        sx={{ color: '#fff' }}
+                                        sx={{
+                                            color: '#fff',
+                                            // ↓ agregar color de WhatsApp (mínimo cambio)
+                                            bgcolor: WHATSAPP_GREEN,
+                                            '&:hover': { bgcolor: WHATSAPP_GREEN_HOVER },
+                                        }}
                                         startIcon={<WhatsAppIcon />}
                                         onClick={() => window.open('https://wa.me/56912345678', '_blank', 'noopener')}
                                     >
@@ -88,7 +99,12 @@ export default function Hero() {
                                     <Button
                                         variant="contained"
                                         color="secondary"
-                                        sx={{ color: '#fff' }}
+                                        sx={{
+                                            color: '#fff',
+                                            // ↓ agregar azul claro para llamar (mínimo cambio)
+                                            bgcolor: CALL_BLUE,
+                                            '&:hover': { bgcolor: CALL_BLUE_HOVER },
+                                        }}
                                         startIcon={<CallIcon />}
                                         onClick={() => window.open('tel:+56912345678', '_self')}
                                     >
