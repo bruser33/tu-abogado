@@ -10,7 +10,6 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 
 export default function Hero() {
     const BRAND_BLUE = '#173760'
-    // === colores agregados (mínimo cambio) ===
     const CALL_BLUE = '#4FB5FF'
     const CALL_BLUE_HOVER = '#3AA9FB'
     const WHATSAPP_GREEN = '#25D366'
@@ -69,7 +68,7 @@ export default function Hero() {
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <Box
                                     component="img"
-                                    src="/tu-abogado.png"
+                                    src={`${import.meta.env.BASE_URL}tu-abogado.png`} // <-- único cambio
                                     alt="Tu Abogado en Tránsito"
                                     sx={{ width: { xs: '70%', sm: '60%', md: '80%' }, maxWidth: 420, height: 'auto', display: 'block' }}
                                 />
@@ -87,7 +86,6 @@ export default function Hero() {
                                         color="primary"
                                         sx={{
                                             color: '#fff',
-                                            // ↓ agregar color de WhatsApp (mínimo cambio)
                                             bgcolor: WHATSAPP_GREEN,
                                             '&:hover': { bgcolor: WHATSAPP_GREEN_HOVER },
                                         }}
@@ -101,7 +99,6 @@ export default function Hero() {
                                         color="secondary"
                                         sx={{
                                             color: '#fff',
-                                            // ↓ agregar azul claro para llamar (mínimo cambio)
                                             bgcolor: CALL_BLUE,
                                             '&:hover': { bgcolor: CALL_BLUE_HOVER },
                                         }}
