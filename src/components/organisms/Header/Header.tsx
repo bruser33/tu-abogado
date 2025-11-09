@@ -75,6 +75,9 @@ export default function Header() {
     const [resetEmail, setResetEmail] = useState('')
     const [loadingReset, setLoadingReset] = useState(false)
 
+    // URL base (funciona en dev y en Pages)
+    const baseUrl = new URL(import.meta.env.BASE_URL, location.origin).toString()
+
     // handlers supabase
     const onLogin = submitLogin(async ({ email, password }) => {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
@@ -84,7 +87,12 @@ export default function Header() {
     })
 
     const onRegister = submitRegister(async ({ email, password }) => {
-        const { error } = await supabase.auth.signUp({ email, password })
+        // 👇 FIX: forzar redirect al entorno actual (GitHub Pages en prod)
+        const { error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: { emailRedirectTo: baseUrl },
+        })
         if (error) return alert(error.message)
         alert('Te enviamos un correo para confirmar la cuenta.')
         setOpenRegister(false)
@@ -193,12 +201,8 @@ export default function Header() {
                             >
                                 <MenuItem disabled>{user.email}</MenuItem>
                                 <Divider />
-                                {/* ← FIX: acceso directo al CRUD de casos */}
-                                <MenuItem
-                                    component={RouterLink}
-                                    to="/cases"
-                                    onClick={() => setAnchorEl(null)}
-                                >
+                                {/* Acceso directo al CRUD de casos */}
+                                <MenuItem component={RouterLink} to="/cases" onClick={() => setAnchorEl(null)}>
                                     Mis casos
                                 </MenuItem>
                                 <Divider />
@@ -266,7 +270,6 @@ export default function Header() {
                             </Stack>
                         ) : (
                             <Stack direction="row" gap={1} sx={{ mt: 2 }}>
-                                {/* ← FIX: botón directo a casos en móvil */}
                                 <Button
                                     fullWidth
                                     variant="contained"
