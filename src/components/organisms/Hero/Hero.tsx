@@ -7,6 +7,7 @@ import Stack from '@mui/material/Stack'
 import WhatsAppIcon from '@mui/icons-material/WhatsApp'
 import CallIcon from '@mui/icons-material/Call'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import logoUrl from '@assets/tu-abogado.png' // ← único cambio: importar el asset
 
 export default function Hero() {
     const BRAND_BLUE = '#173760'
@@ -68,7 +69,7 @@ export default function Hero() {
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <Box
                                     component="img"
-                                    src={`${import.meta.env.BASE_URL}tu-abogado.png`} // <-- único cambio
+                                    src={logoUrl}                         // ← usa la URL procesada por Vite
                                     alt="Tu Abogado en Tránsito"
                                     sx={{ width: { xs: '70%', sm: '60%', md: '80%' }, maxWidth: 420, height: 'auto', display: 'block' }}
                                 />

@@ -23,6 +23,9 @@ export default defineConfig(({ mode }) => {
         '@lib': path.resolve(__dirname, 'src/lib'),
         '@types': path.resolve(__dirname, 'src/types'),
         '@assets': path.resolve(__dirname, 'src/assets'),
+        '@auth': path.resolve(__dirname, 'src/auth'),
+        '@cases': path.resolve(__dirname, 'src/components/organisms/cases'),
+
       },
     },
   }

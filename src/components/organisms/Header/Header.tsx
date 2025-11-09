@@ -1,5 +1,6 @@
-// Header.tsx
+// src/components/organisms/Header/Header.tsx
 import { useState } from 'react'
+import { Link as RouterLink } from 'react-router-dom'
 import AppBar from '@mui/material/AppBar'
 import Toolbar from '@mui/material/Toolbar'
 import Box from '@mui/material/Box'
@@ -14,21 +15,102 @@ import ListItemButton from '@mui/material/ListItemButton'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import MenuIcon from '@mui/icons-material/Menu'
-import CallIcon from '@mui/icons-material/Call'
-import WhatsAppIcon from '@mui/icons-material/WhatsApp'
 import HomeIcon from '@mui/icons-material/Home'
 import BuildIcon from '@mui/icons-material/Build'
 import MailIcon from '@mui/icons-material/Mail'
 
+// === imports para auth UI ===
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
+import TextField from '@mui/material/TextField'
+import Stack from '@mui/material/Stack'
+import CircularProgress from '@mui/material/CircularProgress'
+import Avatar from '@mui/material/Avatar'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
+import Divider from '@mui/material/Divider'
+import { useForm } from 'react-hook-form'
+import { z } from 'zod'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { useAuth } from '../../../auth/AuthProvider.tsx'
+import { supabase } from '../../../auth/supabase.ts'
+
+const loginSchema = z.object({
+    email: z.string().email('Email inválido'),
+    password: z.string().min(6, 'Mínimo 6 caracteres'),
+})
+type LoginForm = z.infer<typeof loginSchema>
+type RegisterForm = LoginForm
+
 export default function Header() {
     const [open, setOpen] = useState(false)
+    const { user } = useAuth()
+
+    // diálogos
+    const [openLogin, setOpenLogin] = useState(false)
+    const [openRegister, setOpenRegister] = useState(false)
+    const [openForgot, setOpenForgot] = useState(false)
+
+    // menú usuario
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
+    const openMenu = Boolean(anchorEl)
+
+    // forms
+    const {
+        register: regLogin,
+        handleSubmit: submitLogin,
+        formState: { errors: eLogin, isSubmitting: loadingLogin },
+        reset: resetLogin,
+    } = useForm<LoginForm>({ resolver: zodResolver(loginSchema) })
+
+    const {
+        register: regRegister,
+        handleSubmit: submitRegister,
+        formState: { errors: eRegister, isSubmitting: loadingRegister },
+        reset: resetRegister,
+    } = useForm<RegisterForm>({ resolver: zodResolver(loginSchema) })
+
+    const [resetEmail, setResetEmail] = useState('')
+    const [loadingReset, setLoadingReset] = useState(false)
+
+    // handlers supabase
+    const onLogin = submitLogin(async ({ email, password }) => {
+        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        if (error) return alert(error.message)
+        setOpenLogin(false)
+        resetLogin()
+    })
+
+    const onRegister = submitRegister(async ({ email, password }) => {
+        const { error } = await supabase.auth.signUp({ email, password })
+        if (error) return alert(error.message)
+        alert('Te enviamos un correo para confirmar la cuenta.')
+        setOpenRegister(false)
+        resetRegister()
+    })
+
+    const onForgot = async () => {
+        try {
+            setLoadingReset(true)
+            const redirectTo = new URL(`${import.meta.env.BASE_URL}reset`, location.origin).toString()
+            const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, { redirectTo })
+            if (error) return alert(error.message)
+            alert('Revisa tu correo para restablecer tu contraseña.')
+            setOpenForgot(false)
+            setResetEmail('')
+        } finally {
+            setLoadingReset(false)
+        }
+    }
+
+    const logout = async () => {
+        await supabase.auth.signOut()
+        setAnchorEl(null)
+    }
 
     const BRAND_BLUE = '#173760'
-    // === colores agregados (mínimo cambio) ===
-    const CALL_BLUE = '#4FB5FF'
-    const CALL_BLUE_HOVER = '#3AA9FB'
-    const WHATSAPP_GREEN = '#1FC65C'
-    const WHATSAPP_GREEN_HOVER = '#1EC65C'
 
     return (
         <AppBar
@@ -51,13 +133,12 @@ export default function Header() {
                     mx: 'auto',
                     width: '100%',
                     px: { xs: 2, md: 2 },
-                    py: 0,
                     minHeight: { xs: 56, md: 60 },
                     alignItems: 'center',
                     gap: { xs: 1.25, md: 1.5 },
                 }}
             >
-                {/* Marca (sin logo ni subtítulo) */}
+                {/* Marca */}
                 <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1, minWidth: 0 }}>
                     <Typography
                         component="div"
@@ -87,40 +168,44 @@ export default function Header() {
                     </Link>
                 </Box>
 
-                {/* Botones compactos */}
+                {/* Auth / Usuario */}
                 <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1 }}>
-                    <Button
-                        size="small"
-                        variant="contained" // ← antes: outlined
-                        sx={{
-                            color: '#fff',
-                            // ↓ azul claro como en Hero
-                            bgcolor: CALL_BLUE,
-                            py: 0.5,
-                            px: 1.25,
-                            '&:hover': { bgcolor: CALL_BLUE_HOVER },
-                        }}
-                        startIcon={<CallIcon fontSize="small" />}
-                        onClick={() => window.open('tel:+56912345678', '_self')}
-                    >
-                        +56 9 1234 5678
-                    </Button>
-                    <Button
-                        size="small"
-                        variant="contained"
-                        sx={{
-                            color: '#fff',
-                            // ↓ verde WhatsApp como en Hero
-                            bgcolor: WHATSAPP_GREEN,
-                            py: 0.5,
-                            px: 1.25,
-                            '&:hover': { bgcolor: WHATSAPP_GREEN_HOVER },
-                        }}
-                        startIcon={<WhatsAppIcon fontSize="small" />}
-                        onClick={() => window.open('https://wa.me/56912345678', '_blank', 'noopener')}
-                    >
-                        Contáctanos
-                    </Button>
+                    {!user ? (
+                        <>
+                            <Button color="inherit" onClick={() => setOpenLogin(true)}>Ingresar</Button>
+                            <Button variant="contained" color="secondary" onClick={() => setOpenRegister(true)}>
+                                Crear cuenta
+                            </Button>
+                        </>
+                    ) : (
+                        <>
+                            <IconButton onClick={(e) => setAnchorEl(e.currentTarget)} sx={{ p: 0 }}>
+                                <Avatar sx={{ width: 36, height: 36 }}>
+                                    {(user.email ?? 'U')[0].toUpperCase()}
+                                </Avatar>
+                            </IconButton>
+                            <Menu
+                                anchorEl={anchorEl}
+                                open={openMenu}
+                                onClose={() => setAnchorEl(null)}
+                                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                            >
+                                <MenuItem disabled>{user.email}</MenuItem>
+                                <Divider />
+                                {/* ← FIX: acceso directo al CRUD de casos */}
+                                <MenuItem
+                                    component={RouterLink}
+                                    to="/cases"
+                                    onClick={() => setAnchorEl(null)}
+                                >
+                                    Mis casos
+                                </MenuItem>
+                                <Divider />
+                                <MenuItem onClick={logout}>Cerrar sesión</MenuItem>
+                            </Menu>
+                        </>
+                    )}
                 </Box>
 
                 {/* Menú móvil */}
@@ -134,7 +219,6 @@ export default function Header() {
 
                 <Drawer anchor="right" open={open} onClose={() => setOpen(false)}>
                     <Box sx={{ width: 300, p: 2, bgcolor: BRAND_BLUE, color: '#fff', height: '100%' }}>
-                        {/* Encabezado del drawer sin logo ni subtítulo */}
                         <Typography variant="h6" fontWeight={800} sx={{ mb: 1 }}>
                             Tu Abogado en Tránsito
                         </Typography>
@@ -159,9 +243,148 @@ export default function Header() {
                                 </ListItemButton>
                             </ListItem>
                         </List>
+
+                        {/* acciones auth en móvil */}
+                        {!user ? (
+                            <Stack direction="row" gap={1} sx={{ mt: 2 }}>
+                                <Button
+                                    fullWidth
+                                    variant="contained"
+                                    color="secondary"
+                                    onClick={() => { setOpen(false); setOpenLogin(true) }}
+                                >
+                                    Ingresar
+                                </Button>
+                                <Button
+                                    fullWidth
+                                    variant="outlined"
+                                    color="inherit"
+                                    onClick={() => { setOpen(false); setOpenRegister(true) }}
+                                >
+                                    Crear cuenta
+                                </Button>
+                            </Stack>
+                        ) : (
+                            <Stack direction="row" gap={1} sx={{ mt: 2 }}>
+                                {/* ← FIX: botón directo a casos en móvil */}
+                                <Button
+                                    fullWidth
+                                    variant="contained"
+                                    component={RouterLink}
+                                    to="/cases"
+                                    onClick={() => setOpen(false)}
+                                >
+                                    Mis casos
+                                </Button>
+                                <Button fullWidth variant="outlined" color="inherit" onClick={logout}>
+                                    Salir
+                                </Button>
+                            </Stack>
+                        )}
                     </Box>
                 </Drawer>
             </Toolbar>
+
+            {/* ===== Dialog: Login ===== */}
+            <Dialog open={openLogin} onClose={() => setOpenLogin(false)} maxWidth="xs" fullWidth>
+                <DialogTitle>Ingresar</DialogTitle>
+                <DialogContent dividers>
+                    <Stack component="form" onSubmit={onLogin} gap={2} sx={{ pt: 1 }}>
+                        <TextField
+                            label="Email"
+                            type="email"
+                            {...regLogin('email')}
+                            error={!!eLogin.email}
+                            helperText={eLogin.email?.message}
+                            fullWidth
+                            autoFocus
+                        />
+                        <TextField
+                            label="Contraseña"
+                            type="password"
+                            {...regLogin('password')}
+                            error={!!eLogin.password}
+                            helperText={eLogin.password?.message}
+                            fullWidth
+                        />
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            <Link
+                                component="button"
+                                type="button"
+                                onClick={() => { setOpenLogin(false); setOpenForgot(true) }}
+                            >
+                                ¿Olvidaste tu contraseña?
+                            </Link>
+                            <Button type="submit" variant="contained" disabled={loadingLogin}>
+                                {loadingLogin ? <CircularProgress size={18} /> : 'Entrar'}
+                            </Button>
+                        </Stack>
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => { setOpenLogin(false); setOpenRegister(true) }}>Crear cuenta</Button>
+                    <Button onClick={() => setOpenLogin(false)}>Cerrar</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* ===== Dialog: Registro ===== */}
+            <Dialog open={openRegister} onClose={() => setOpenRegister(false)} maxWidth="xs" fullWidth>
+                <DialogTitle>Crear cuenta</DialogTitle>
+                <DialogContent dividers>
+                    <Stack component="form" onSubmit={onRegister} gap={2} sx={{ pt: 1 }}>
+                        <TextField
+                            label="Email"
+                            type="email"
+                            {...regRegister('email')}
+                            error={!!eRegister.email}
+                            helperText={eRegister.email?.message}
+                            fullWidth
+                            autoFocus
+                        />
+                        <TextField
+                            label="Contraseña"
+                            type="password"
+                            {...regRegister('password')}
+                            error={!!eRegister.password}
+                            helperText={eRegister.password?.message}
+                            fullWidth
+                        />
+                        <Button type="submit" variant="contained" disabled={loadingRegister}>
+                            {loadingRegister ? <CircularProgress size={18} /> : 'Registrarme'}
+                        </Button>
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => { setOpenRegister(false); setOpenLogin(true) }}>Ya tengo cuenta</Button>
+                    <Button onClick={() => setOpenRegister(false)}>Cerrar</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* ===== Dialog: Recuperar ===== */}
+            <Dialog open={openForgot} onClose={() => setOpenForgot(false)} maxWidth="xs" fullWidth>
+                <DialogTitle>Recuperar contraseña</DialogTitle>
+                <DialogContent dividers>
+                    <Stack gap={2} sx={{ pt: 1 }}>
+                        <TextField
+                            label="Email"
+                            type="email"
+                            value={resetEmail}
+                            onChange={(e) => setResetEmail(e.target.value)}
+                            fullWidth
+                            autoFocus
+                        />
+                        <Typography variant="body2" color="text.secondary">
+                            Te enviaremos un enlace para restablecer tu contraseña.
+                        </Typography>
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={onForgot} variant="contained" disabled={loadingReset || !resetEmail}>
+                        {loadingReset ? <CircularProgress size={18} /> : 'Enviar enlace'}
+                    </Button>
+                    <Button onClick={() => setOpenForgot(false)}>Cerrar</Button>
+                </DialogActions>
+            </Dialog>
         </AppBar>
     )
 }
