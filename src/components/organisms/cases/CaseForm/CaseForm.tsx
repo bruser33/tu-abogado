@@ -13,16 +13,12 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import type { LegalCase } from '@lib/casesApi'
 
 const schema = z.object({
-    title: z.string().min(3),
-    case_type: z.string().min(2),
-    status: z.enum(['nuevo', 'en_progreso', 'suspendido', 'cerrado']),
-    client_name: z.string().min(2),
-    court: z.string().optional(),
-    docket: z.string().optional(),
-    opposing_party: z.string().optional(),
-    next_hearing_at: z.string().optional(),
-    value_amount: z.coerce.number().optional(),
-    notes: z.string().optional(),
+    cedula_demandante: z.string().min(3, 'Requerida'),
+    demandados_text: z.string().optional(), // UI simple: coma-separado
+    tipo: z.enum(['transito', 'civil', 'penal', 'terrorista']),
+    juzgado_tipo: z.enum(['regional', 'departamental', 'otro']),
+    juzgado_nombre: z.string().min(2, 'Requerido'),
+    numero_radicado: z.string().min(2, 'Requerido'),
 })
 type FormData = z.infer<typeof schema>
 
@@ -35,35 +31,50 @@ export default function CaseForm({
     open: boolean
     initial?: Partial<LegalCase>
     onClose: () => void
-    onSubmit: (data: FormData) => void
+    onSubmit: (data: Omit<LegalCase, 'id' | 'created_at' | 'updated_at'>) => void
 }) {
     const defaults: DefaultValues<FormData> = {
-        title: '',
-        case_type: 'transito',
-        status: 'nuevo',
-        client_name: '',
-        court: '',
-        docket: '',
-        opposing_party: '',
-        next_hearing_at: '',
-        value_amount: undefined,
-        notes: '',
+        cedula_demandante: '',
+        demandados_text: '',
+        tipo: 'transito',
+        juzgado_tipo: 'regional',
+        juzgado_nombre: '',
+        numero_radicado: '',
     }
 
-    const {
-        register,
-        handleSubmit,
-        reset,
-        formState: { errors, isSubmitting },
-    } = useForm<FormData>({
-        // ⚠️ Forzamos any para evitar los TS2719/2558/2322 del build
-        resolver: zodResolver(schema) as any,
-        defaultValues: defaults as any,
-    })
+    const { register, handleSubmit, reset, formState: { errors, isSubmitting } } =
+        useForm<FormData>({ resolver: zodResolver(schema), defaultValues: defaults })
 
     useEffect(() => {
-        reset({ ...(defaults as any), ...(initial as any) })
+        if (!initial) { reset(defaults); return }
+        reset({
+            cedula_demandante: initial.cedula_demandante ?? '',
+            demandados_text: Array.isArray(initial.demandados) ? initial.demandados.join(', ') : '',
+            tipo: (initial.tipo as any) ?? 'transito',
+            juzgado_tipo: (initial.juzgado_tipo as any) ?? 'regional',
+            juzgado_nombre: initial.juzgado_nombre ?? '',
+            numero_radicado: initial.numero_radicado ?? '',
+        })
     }, [initial, reset])
+
+    const submit = handleSubmit((form) => {
+        const demandados = (form.demandados_text ?? '')
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean)
+
+        // 👇 Enviamos SOLO las propiedades permitidas por Omit<LegalCase,'id'|'created_at'|'updated_at'>
+        onSubmit({
+            cedula_demandante: form.cedula_demandante,
+            demandados,
+            tipo: form.tipo,
+            juzgado_tipo: form.juzgado_tipo,
+            juzgado_nombre: form.juzgado_nombre,
+            numero_radicado: form.numero_radicado,
+            // assigned_lawyer lo agrega el caller (create) con user.id
+            assigned_lawyer: (initial?.assigned_lawyer ?? '') as string,
+        })
+    })
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -80,28 +91,24 @@ export default function CaseForm({
                     {/* fila 1 */}
                     <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 2' } }}>
                         <TextField
-                            label="Título"
+                            label="Cédula Demandante"
                             fullWidth
-                            {...register('title')}
-                            error={!!errors.title}
-                            helperText={errors.title?.message}
+                            {...register('cedula_demandante')}
+                            error={!!errors.cedula_demandante}
+                            helperText={errors.cedula_demandante?.message}
                         />
                     </Box>
                     <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 1' } }}>
-                        <TextField label="Tipo" select fullWidth {...register('case_type')}>
-                            {['transito', 'civil', 'laboral', 'penal', 'familia', 'otro'].map((t) => (
-                                <MenuItem key={t} value={t}>
-                                    {t}
-                                </MenuItem>
+                        <TextField select label="Tipo de caso" fullWidth {...register('tipo')}>
+                            {['transito', 'civil', 'penal', 'terrorista'].map(t => (
+                                <MenuItem key={t} value={t}>{t}</MenuItem>
                             ))}
                         </TextField>
                     </Box>
                     <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 1' } }}>
-                        <TextField label="Estado" select fullWidth {...register('status')}>
-                            {['nuevo', 'en_progreso', 'suspendido', 'cerrado'].map((s) => (
-                                <MenuItem key={s} value={s}>
-                                    {s}
-                                </MenuItem>
+                        <TextField select label="Juzgado (tipo)" fullWidth {...register('juzgado_tipo')}>
+                            {['regional', 'departamental', 'otro'].map(t => (
+                                <MenuItem key={t} value={t}>{t}</MenuItem>
                             ))}
                         </TextField>
                     </Box>
@@ -109,51 +116,39 @@ export default function CaseForm({
                     {/* fila 2 */}
                     <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 2' } }}>
                         <TextField
-                            label="Cliente"
+                            label="Nombre del Juzgado"
                             fullWidth
-                            {...register('client_name')}
-                            error={!!errors.client_name}
-                            helperText={errors.client_name?.message}
+                            {...register('juzgado_nombre')}
+                            error={!!errors.juzgado_nombre}
+                            helperText={errors.juzgado_nombre?.message}
                         />
                     </Box>
-                    <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 1' } }}>
-                        <TextField label="Tribunal" fullWidth {...register('court')} />
-                    </Box>
-                    <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 1' } }}>
-                        <TextField label="RIT/RUC" fullWidth {...register('docket')} />
+                    <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 2' } }}>
+                        <TextField
+                            label="Número de Radicado"
+                            fullWidth
+                            {...register('numero_radicado')}
+                            error={!!errors.numero_radicado}
+                            helperText={errors.numero_radicado?.message}
+                        />
                     </Box>
 
                     {/* fila 3 */}
-                    <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 2' } }}>
-                        <TextField label="Contraparte" fullWidth {...register('opposing_party')} />
-                    </Box>
-                    <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 1' } }}>
-                        <TextField
-                            label="Próx. audiencia"
-                            type="datetime-local"
-                            fullWidth
-                            InputLabelProps={{ shrink: true }}
-                            {...register('next_hearing_at')}
-                        />
-                    </Box>
-                    <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 1' } }}>
-                        <TextField label="Monto" type="number" fullWidth {...register('value_amount' as any)} />
-                    </Box>
-
-                    {/* fila 4 */}
                     <Box sx={{ gridColumn: '1 / -1' }}>
-                        <TextField label="Notas" fullWidth multiline minRows={3} {...register('notes')} />
+                        <TextField
+                            label="Demandados (separar por coma)"
+                            fullWidth
+                            multiline
+                            minRows={2}
+                            placeholder="Juan Pérez, ACME Ltda., ..."
+                            {...register('demandados_text')}
+                        />
                     </Box>
                 </Box>
             </DialogContent>
             <DialogActions>
                 <Button onClick={onClose}>Cancelar</Button>
-                {/* Forzamos el tipo en handleSubmit para evitar TS2345 */}
-                <Button
-                    onClick={handleSubmit((d) => onSubmit(d as any))}
-                    variant="contained"
-                    disabled={isSubmitting}
-                >
+                <Button onClick={submit} variant="contained" disabled={isSubmitting}>
                     Guardar
                 </Button>
             </DialogActions>

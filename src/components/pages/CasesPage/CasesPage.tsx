@@ -1,4 +1,3 @@
-// src/components/pages/Cases/CasesPage.tsx
 import { useState, useMemo } from 'react'
 import Container from '@mui/material/Container'
 import Paper from '@mui/material/Paper'
@@ -12,43 +11,32 @@ import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
-import CircularProgress from '@mui/material/CircularProgress'
-import Alert from '@mui/material/Alert'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
+import RuleFolderIcon from '@mui/icons-material/RuleFolder'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { listCases, createCase, updateCase, deleteCase, type LegalCase } from '@lib/casesApi.ts'
-import { useAuth } from '../../../auth/AuthProvider.tsx'
-import CaseForm from '@organisms/cases/CaseForm/CaseForm.tsx'
+
+import { listCases, createCase, updateCase, deleteCase, type LegalCase } from '@lib/casesApi'
+import CaseForm from '@organisms/cases/CaseForm/CaseForm'
+import {useAuth} from "../../../auth/AuthProvider.tsx";
+import ActuationsDialog from "@organisms/cases/ActuationsDialog";
 
 export default function CasesPage() {
     const { user } = useAuth()
     const qc = useQueryClient()
-
-    // ✨ No hagas fetch si no hay sesión
-    const {
-        data,
-        isLoading,
-        isFetching,
-        isError,
-        error,
-    } = useQuery({
-        queryKey: ['cases'],
-        queryFn: listCases,
-        enabled: !!user,
-    })
-
+    const { data, isLoading } = useQuery({ queryKey: ['cases'], queryFn: listCases })
     const [openForm, setOpenForm] = useState(false)
     const [editing, setEditing] = useState<LegalCase | null>(null)
+
+    const [openActs, setOpenActs] = useState<{ open: boolean; caseId?: string; caseTitle?: string }>({ open: false })
 
     const createMut = useMutation({
         mutationFn: createCase,
         onSuccess: () => qc.invalidateQueries({ queryKey: ['cases'] }),
     })
     const updateMut = useMutation({
-        mutationFn: ({ id, patch }: { id: string; patch: Partial<LegalCase> }) =>
-            updateCase(id, patch),
+        mutationFn: ({ id, patch }: { id: string; patch: Partial<LegalCase> }) => updateCase(id, patch),
         onSuccess: () => qc.invalidateQueries({ queryKey: ['cases'] }),
     })
     const deleteMut = useMutation({
@@ -71,93 +59,60 @@ export default function CasesPage() {
         <Container maxWidth="lg" sx={{ py: 4 }}>
             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
                 <Typography variant="h5">Mis casos</Typography>
-                <Button
-                    startIcon={<AddIcon />}
-                    variant="contained"
-                    onClick={onCreate}
-                    disabled={!user}
-                >
+                <Button startIcon={<AddIcon />} variant="contained" onClick={onCreate}>
                     Nuevo caso
                 </Button>
             </Stack>
-
-            {/* Estado: sin sesión */}
-            {!user && (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                    Inicia sesión para ver y gestionar tus casos.
-                </Alert>
-            )}
-
-            {/* Estado: error de fetch */}
-            {isError && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                    {(error as any)?.message || 'No se pudieron cargar los casos.'}
-                </Alert>
-            )}
 
             <Paper>
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell>Título</TableCell>
+                            <TableCell>Radicado</TableCell>
                             <TableCell>Tipo</TableCell>
-                            <TableCell>Estado</TableCell>
-                            <TableCell>Cliente</TableCell>
-                            <TableCell>Próx. audiencia</TableCell>
+                            <TableCell>Juzgado</TableCell>
+                            <TableCell>Demandante (Cédula)</TableCell>
+                            <TableCell>Demandados</TableCell>
                             <TableCell align="right">Acciones</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {/* Cargando */}
-                        {user && (isLoading || isFetching) && (
+                        {isLoading ? (
                             <TableRow>
-                                <TableCell colSpan={6}>
-                                    <Stack direction="row" alignItems="center" gap={1}>
-                                        <CircularProgress size={18} /> Cargando…
-                                    </Stack>
-                                </TableCell>
+                                <TableCell colSpan={6}>Cargando…</TableCell>
                             </TableRow>
-                        )}
-
-                        {/* Vacío */}
-                        {user && !isLoading && rows.length === 0 && !isError && (
+                        ) : rows.length === 0 ? (
                             <TableRow>
                                 <TableCell colSpan={6}>No hay casos aún.</TableCell>
                             </TableRow>
+                        ) : (
+                            rows.map((row) => (
+                                <TableRow key={row.id} hover>
+                                    <TableCell>{row.numero_radicado || '-'}</TableCell>
+                                    <TableCell>{row.tipo}</TableCell>
+                                    <TableCell>{`${row.juzgado_tipo} — ${row.juzgado_nombre}`}</TableCell>
+                                    <TableCell>{row.cedula_demandante || '-'}</TableCell>
+                                    <TableCell>{(row.demandados ?? []).join(', ') || '-'}</TableCell>
+                                    <TableCell align="right">
+                                        <Tooltip title="Actuaciones">
+                                            <IconButton onClick={() => setOpenActs({ open: true, caseId: row.id, caseTitle: row.numero_radicado || row.id })}>
+                                                <RuleFolderIcon />
+                                            </IconButton>
+                                        </Tooltip>
+                                        <Tooltip title="Editar">
+                                            <IconButton onClick={() => onEdit(row)}>
+                                                <EditIcon />
+                                            </IconButton>
+                                        </Tooltip>
+                                        <Tooltip title="Eliminar">
+                                            <IconButton color="error" onClick={() => deleteMut.mutate(row.id)}>
+                                                <DeleteIcon />
+                                            </IconButton>
+                                        </Tooltip>
+                                    </TableCell>
+                                </TableRow>
+                            ))
                         )}
-
-                        {/* Filas */}
-                        {rows.map((row) => (
-                            <TableRow key={row.id} hover>
-                                <TableCell>{row.title}</TableCell>
-                                <TableCell>{row.case_type}</TableCell>
-                                <TableCell>{row.status}</TableCell>
-                                <TableCell>{row.client_name}</TableCell>
-                                <TableCell>
-                                    {row.next_hearing_at ? new Date(row.next_hearing_at).toLocaleString() : '-'}
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Tooltip title="Editar">
-                    <span>
-                      <IconButton onClick={() => onEdit(row)} disabled={!user}>
-                        <EditIcon />
-                      </IconButton>
-                    </span>
-                                    </Tooltip>
-                                    <Tooltip title="Eliminar">
-                    <span>
-                      <IconButton
-                          color="error"
-                          onClick={() => deleteMut.mutate(row.id)}
-                          disabled={!user}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </span>
-                                    </Tooltip>
-                                </TableCell>
-                            </TableRow>
-                        ))}
                     </TableBody>
                 </Table>
             </Paper>
@@ -175,6 +130,13 @@ export default function CasesPage() {
                     }
                     setOpenForm(false)
                 }}
+            />
+
+            <ActuationsDialog
+                open={openActs.open}
+                caseId={openActs.caseId}
+                title={`Actuaciones — ${openActs.caseTitle ?? ''}`}
+                onClose={() => setOpenActs({ open: false })}
             />
         </Container>
     )
