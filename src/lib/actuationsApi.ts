@@ -1,17 +1,16 @@
-// src/lib/actuacionesApi.ts
+// src/lib/actuationsApi.ts
 import { supabase } from '@auth/supabase'
 
 export type Actuacion = {
     id: string
     case_id: string
     nombre: string
-    descripcion: string
-    entidades: string | null
+    descripcion?: string
+    entidades?: string
+    adjuntos?: string[]        // rutas en el bucket 'actuaciones'
     created_at: string
     updated_at: string
 }
-
-// ===== CRUD Actuaciones (tabla: actuaciones) =====
 
 export async function listActuaciones(caseId: string): Promise<Actuacion[]> {
     const { data, error } = await supabase
@@ -21,63 +20,77 @@ export async function listActuaciones(caseId: string): Promise<Actuacion[]> {
         .order('created_at', { ascending: false })
 
     if (error) throw error
-    return data ?? []
+    return (data ?? []) as Actuacion[]
 }
 
-export async function createActuacion(input: {
+export async function createActuacion(payload: {
     case_id: string
     nombre: string
     descripcion?: string
     entidades?: string
+    adjuntos?: string[]
 }): Promise<Actuacion> {
-    const payload = {
-        case_id: input.case_id,
-        nombre: input.nombre,
-        descripcion: input.descripcion ?? '',
-        entidades: input.entidades ?? null,
-    }
     const { data, error } = await supabase
         .from('actuaciones')
         .insert(payload)
-        .select()
+        .select('*')
         .single()
 
     if (error) throw error
-    return data
+    return data as Actuacion
 }
 
-export async function updateActuacion(params: {
-    id: string
-    patch: Partial<Pick<Actuacion, 'nombre' | 'descripcion' | 'entidades'> & { case_id: string }>
-}): Promise<Actuacion> {
-    const { id, patch } = params
+export async function updateActuacion(
+    id: string,
+    patch: {
+        nombre?: string
+        descripcion?: string
+        entidades?: string
+        adjuntos?: string[]
+    }
+): Promise<Actuacion> {
     const { data, error } = await supabase
         .from('actuaciones')
         .update(patch)
         .eq('id', id)
-        .select()
+        .select('*')
         .single()
 
     if (error) throw error
-    return data
+    return data as Actuacion
 }
 
 export async function deleteActuacion(id: string): Promise<void> {
-    const { error } = await supabase.from('actuaciones').delete().eq('id', id)
+    const { error } = await supabase
+        .from('actuaciones')
+        .delete()
+        .eq('id', id)
     if (error) throw error
 }
 
-// ===== Storage para archivos por caso (bucket: actuaciones) =====
-
-const BUCKET = 'actuaciones'
-
-export async function uploadActFile(params: { caseId: string; file: File }): Promise<string> {
-    const { caseId, file } = params
-    const key = `${caseId}/${Date.now()}-${file.name}`
-
-    const { error } = await supabase.storage.from(BUCKET).upload(key, file, {
-        upsert: false,
-    })
+/**
+ * Sube un archivo al bucket 'actuaciones' bajo: <caseId>/<timestamp>-<nombre>
+ * Devuelve la RUTA (path) guardada en Storage (no la URL).
+ */
+export async function uploadActFile(file: File, caseId: string): Promise<string> {
+    const path = `${caseId}/${Date.now()}-${file.name}`
+    const { error } = await supabase
+        .storage
+        .from('actuaciones')
+        .upload(path, file, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: file.type || undefined,
+        })
     if (error) throw error
-    return key
+    return path
+}
+
+/**
+ * Devuelve la URL pública (requiere bucket 'actuaciones' PUBLIC).
+ * Si tu bucket es privado, cambia a createSignedUrl.
+ */
+export function getPublicUrl(path: string): string {
+    const { data } = supabase.storage.from('actuaciones').getPublicUrl(path)
+    return data.publicUrl
 }

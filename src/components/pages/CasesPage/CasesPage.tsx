@@ -1,163 +1,127 @@
-// src/components/pages/CasesPage/CasesPage.tsx
-import { useMemo, useState } from 'react'
-import {
-    Box,
-    Button,
-    IconButton,
-    Paper,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
-    Typography,
-} from '@mui/material'
-import AddIcon from '@mui/icons-material/Add'
-import EditIcon from '@mui/icons-material/Edit'
+import { useState, useMemo } from 'react'
+import Container from '@mui/material/Container'
+import Paper from '@mui/material/Paper'
+import Stack from '@mui/material/Stack'
+import Button from '@mui/material/Button'
+import Typography from '@mui/material/Typography'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
+import Table from '@mui/material/Table'
+import TableBody from '@mui/material/TableBody'
+import TableCell from '@mui/material/TableCell'
+import TableHead from '@mui/material/TableHead'
+import TableRow from '@mui/material/TableRow'
 import DeleteIcon from '@mui/icons-material/Delete'
-import DescriptionIcon from '@mui/icons-material/Description' // abrir actuaciones
+import EditIcon from '@mui/icons-material/Edit'
+import AddIcon from '@mui/icons-material/Add'
+import RuleFolderIcon from '@mui/icons-material/RuleFolder'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-    listCases,
-    createCase,
-    updateCase,
-    deleteCase,
-    type LegalCase,
-} from '@lib/casesApi'
-
+import { listCases, createCase, updateCase, deleteCase, type LegalCase } from '@lib/casesApi'
+import { useAuth } from '@auth/AuthProvider'
 import CaseForm from '@cases/CaseForm/CaseForm'
 import ActuationsDialog from '@cases/ActuationsDialog/ActuationsDialog'
 
 export default function CasesPage() {
+    const { user } = useAuth()
     const qc = useQueryClient()
-
-    // dialogs
-    const [caseFormOpen, setCaseFormOpen] = useState(false)
-    const [editingCase, setEditingCase] = useState<LegalCase | null>(null)
-
-    const [actDlgOpen, setActDlgOpen] = useState(false)
-    const [actCaseId, setActCaseId] = useState<string | null>(null)
-
-    // data
-    const { data: cases = [] } = useQuery({
-        queryKey: ['cases'],
-        queryFn: listCases,
-    })
+    const { data, isLoading } = useQuery({ queryKey: ['cases'], queryFn: listCases })
+    const [openForm, setOpenForm] = useState(false)
+    const [editing, setEditing] = useState<LegalCase | null>(null)
+    const [openActs, setOpenActs] = useState<{ open: boolean; caseId?: string; caseTitle?: string }>({ open: false })
 
     const createMut = useMutation({
         mutationFn: createCase,
         onSuccess: () => qc.invalidateQueries({ queryKey: ['cases'] }),
     })
-
     const updateMut = useMutation({
-        mutationFn: ({ id, patch }: { id: string; patch: Omit<LegalCase, 'id' | 'created_at' | 'updated_at'> }) =>
-            updateCase(id, patch),
+        mutationFn: ({ id, patch }: { id: string; patch: Partial<LegalCase> }) => updateCase(id, patch),
         onSuccess: () => qc.invalidateQueries({ queryKey: ['cases'] }),
     })
-
     const deleteMut = useMutation({
         mutationFn: deleteCase,
         onSuccess: () => qc.invalidateQueries({ queryKey: ['cases'] }),
     })
 
-    const onCreateClick = () => {
-        setEditingCase(null)
-        setCaseFormOpen(true)
-    }
+    const rows = useMemo(() => data ?? [], [data])
 
-    const onEditClick = (row: LegalCase) => {
-        setEditingCase(row)
-        setCaseFormOpen(true)
-    }
-
-    const onDeleteClick = async (row: LegalCase) => {
-        if (!confirm('¿Eliminar este caso?')) return
-        await deleteMut.mutateAsync(row.id)
-    }
-
-    const onActuationsClick = (row: LegalCase) => {
-        setActCaseId(row.id)
-        setActDlgOpen(true)
-    }
-
-    // submit del formulario de caso
-    const handleSubmit = async (payload: Omit<LegalCase, 'id' | 'created_at' | 'updated_at'>) => {
-        if (editingCase?.id) {
-            await updateMut.mutateAsync({ id: editingCase.id, patch: payload })
-        } else {
-            await createMut.mutateAsync(payload)
-        }
-        setCaseFormOpen(false)
-    }
-
-    const rows = useMemo(() => cases, [cases])
+    const onCreate = () => { setEditing(null); setOpenForm(true) }
+    const onEdit = (row: LegalCase) => { setEditing(row); setOpenForm(true) }
 
     return (
-        <Box sx={{ p: 3 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="h5" fontWeight={700}>
-                    Mis casos
-                </Typography>
-                <Button variant="contained" startIcon={<AddIcon />} onClick={onCreateClick}>
-                    Nuevo caso
-                </Button>
-            </Box>
+        <Container maxWidth="lg" sx={{ py: 4 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+                <Typography variant="h5">Mis casos</Typography>
+                <Button startIcon={<AddIcon />} variant="contained" onClick={onCreate}>Nuevo caso</Button>
+            </Stack>
 
-            <TableContainer component={Paper} elevation={0}>
+            <Paper>
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell>Cédula demandante</TableCell>
-                            <TableCell>Demandados</TableCell>
+                            <TableCell>Radicado</TableCell>
                             <TableCell>Tipo</TableCell>
                             <TableCell>Juzgado</TableCell>
-                            <TableCell>Nº radicado</TableCell>
-                            <TableCell align="center">Acciones</TableCell>
+                            <TableCell>Demandante (Cédula)</TableCell>
+                            <TableCell>Demandados</TableCell>
+                            <TableCell align="right">Acciones</TableCell>
                         </TableRow>
                     </TableHead>
-
                     <TableBody>
-                        {rows.map((row) => (
+                        {isLoading ? (
+                            <TableRow><TableCell colSpan={6}>Cargando…</TableCell></TableRow>
+                        ) : rows.length === 0 ? (
+                            <TableRow><TableCell colSpan={6}>No hay casos aún.</TableCell></TableRow>
+                        ) : rows.map(row => (
                             <TableRow key={row.id} hover>
-                                <TableCell>{row.cedula_demandante}</TableCell>
-                                <TableCell>{row.demandados?.join(', ') || '—'}</TableCell>
+                                <TableCell>{row.numero_radicado || '-'}</TableCell>
                                 <TableCell>{row.tipo}</TableCell>
-                                <TableCell>{row.juzgado}</TableCell>
-                                <TableCell>{row.numero_radicado}</TableCell>
-                                <TableCell align="center">
-                                    {/* ⚠️ IMPORTANTE: dentro del <tr> solo <td> y dentro de <td> ponemos los iconos. Nada de texto suelto */}
-                                    <IconButton size="small" onClick={() => onActuationsClick(row)} title="Actuaciones">
-                                        <DescriptionIcon fontSize="small" />
-                                    </IconButton>
-                                    <IconButton size="small" onClick={() => onEditClick(row)} title="Editar">
-                                        <EditIcon fontSize="small" />
-                                    </IconButton>
-                                    <IconButton size="small" onClick={() => onDeleteClick(row)} title="Eliminar">
-                                        <DeleteIcon fontSize="small" />
-                                    </IconButton>
+                                <TableCell>{`${row.juzgado_tipo} — ${row.juzgado_nombre}`}</TableCell>
+                                <TableCell>{row.cedula_demandante || '-'}</TableCell>
+                                <TableCell>{(row.demandados ?? []).join(', ') || '-'}</TableCell>
+                                <TableCell align="right">
+                                    <Tooltip title="Actuaciones">
+                                        <IconButton onClick={() => setOpenActs({ open: true, caseId: row.id, caseTitle: row.numero_radicado || row.id })}>
+                                            <RuleFolderIcon />
+                                        </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Editar">
+                                        <IconButton onClick={() => onEdit(row)}><EditIcon /></IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Eliminar">
+                                        <IconButton color="error" onClick={() => deleteMut.mutate(row.id)}><DeleteIcon /></IconButton>
+                                    </Tooltip>
                                 </TableCell>
                             </TableRow>
                         ))}
                     </TableBody>
                 </Table>
-            </TableContainer>
+            </Paper>
 
-            {/* Dialogo crear/editar caso */}
             <CaseForm
-                open={caseFormOpen}
-                initial={editingCase ?? undefined}
-                onClose={() => setCaseFormOpen(false)}
-                onSubmit={handleSubmit}
+                open={openForm}
+                initial={editing ?? undefined}
+                onClose={() => setOpenForm(false)}
+                onSubmit={async (form) => {
+                    if (!user) return
+                    if (editing) {
+                        // UPDATE sin assigned_lawyer
+                        const { assigned_lawyer, ...patch } = form as Partial<LegalCase>
+                        await updateMut.mutateAsync({ id: editing.id, patch })
+                    } else {
+                        // CREATE con assigned_lawyer
+                        await createMut.mutateAsync({ ...form, assigned_lawyer: user.id })
+                    }
+                    setOpenForm(false)
+                }}
             />
 
-            {/* Dialogo de actuaciones */}
             <ActuationsDialog
-                open={actDlgOpen}
-                caseId={actCaseId ?? ''}
-                onClose={() => setActDlgOpen(false)}
+                open={openActs.open}
+                caseId={openActs.caseId}
+                title={`Actuaciones — ${openActs.caseTitle ?? ''}`}
+                onClose={() => setOpenActs({ open: false })}
             />
-        </Box>
+        </Container>
     )
 }

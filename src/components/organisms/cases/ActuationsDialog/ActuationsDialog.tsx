@@ -1,291 +1,263 @@
-// src/components/organisms/cases/ActuationsDialog/ActuationsDialog.tsx
-import { useEffect, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
-import TextField from '@mui/material/TextField'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
-import IconButton from '@mui/material/IconButton'
-import Typography from '@mui/material/Typography'
+import TextField from '@mui/material/TextField'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
-import ListItemSecondaryAction from '@mui/material/ListItemSecondaryAction'
+import IconButton from '@mui/material/IconButton'
 import DeleteIcon from '@mui/icons-material/Delete'
+import UploadFileIcon from '@mui/icons-material/UploadFile'
 import EditIcon from '@mui/icons-material/Edit'
-import UploadIcon from '@mui/icons-material/UploadFile'
-import Divider from '@mui/material/Divider'
-import CircularProgress from '@mui/material/CircularProgress'
-import { useForm, type Resolver } from 'react-hook-form'
-import { z } from 'zod'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import Chip from '@mui/material/Chip'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import {
+    type Actuacion,
     listActuaciones,
     createActuacion,
     updateActuacion,
     deleteActuacion,
     uploadActFile,
+    getPublicUrl,
 } from '@lib/actuationsApi'
-import type { Actuacion } from '@lib/actuationsApi'
 
-type Props = {
+export default function ActuationsDialog({
+                                             open, onClose, caseId, title,
+                                         }: {
     open: boolean
-    caseId: string
     onClose: () => void
-    onChanged?: () => void
-}
-
-// ====== Validación con Zod ======
-const schema = z.object({
-    nombre: z.string().min(2, 'Mínimo 2 caracteres'),
-    descripcion: z.string().optional(),
-    entidades: z.string().optional(),
-})
-type FormData = z.infer<typeof schema>
-
-export default function ActuationsDialog({ open, caseId, onClose, onChanged }: Props) {
+    caseId?: string
+    title?: string
+}) {
     const qc = useQueryClient()
-    const fileInputRef = useRef<HTMLInputElement | null>(null)
-    const [editingAct, setEditingAct] = useState<Actuacion | null>(null)
+    const enabled = !!caseId
 
-    // Resolver tipado
-    const resolver: Resolver<FormData> = zodResolver(schema) as unknown as Resolver<FormData>
-
-    const {
-        register,
-        handleSubmit,
-        reset,
-        formState: { errors, isSubmitting },
-    } = useForm<FormData>({
-        resolver,
-        defaultValues: { nombre: '', descripcion: '', entidades: '' },
+    const { data } = useQuery({
+        queryKey: ['acts', caseId],
+        queryFn: () => listActuaciones(caseId!),
+        enabled,
     })
 
-    // === Fetch actuaciones ===
-    const { data: actuaciones, isLoading } = useQuery({
-        queryKey: ['actuaciones', caseId],
-        queryFn: () => listActuaciones(caseId),
-        enabled: open && !!caseId,
-    })
+    // form state
+    const [editingId, setEditingId] = useState<string | null>(null)
+    const [nombre, setNombre] = useState<string>('')
+    const [descripcion, setDescripcion] = useState<string>('')
+    const [entidades, setEntidades] = useState<string>('')
+    const [files, setFiles] = useState<File[]>([])
+    const [adjuntosExistentes, setAdjuntosExistentes] = useState<string[]>([])
 
-    // === Mutaciones CRUD ===
     const createMut = useMutation({
-        mutationFn: (payload: { case_id: string; nombre: string; descripcion?: string; entidades?: string }) =>
-            createActuacion(payload),
-        onSuccess: async () => {
-            await qc.invalidateQueries({ queryKey: ['actuaciones', caseId] })
-            onChanged?.()
-        },
+        mutationFn: createActuacion,
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['acts', caseId] }),
     })
-
     const updateMut = useMutation({
-        mutationFn: (args: { id: string; patch: { nombre?: string; descripcion?: string; entidades?: string } }) =>
-            updateActuacion(args),
-        onSuccess: async () => {
-            await qc.invalidateQueries({ queryKey: ['actuaciones', caseId] })
-            onChanged?.()
-        },
+        mutationFn: ({ id, patch }: { id: string; patch: Parameters<typeof updateActuacion>[1] }) =>
+            updateActuacion(id, patch),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['acts', caseId] }),
     })
-
     const deleteMut = useMutation({
-        mutationFn: (id: string) => deleteActuacion(id),
-        onSuccess: async () => {
-            await qc.invalidateQueries({ queryKey: ['actuaciones', caseId] })
-            onChanged?.()
-        },
+        mutationFn: deleteActuacion,
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['acts', caseId] }),
     })
 
-    const uploadMut = useMutation({
-        mutationFn: (args: { file: File; caseId: string }) => uploadActFile(args),
-    })
+    const acts: Actuacion[] = useMemo(() => data ?? [], [data])
 
-    // === Handlers ===
-    const onSubmit = handleSubmit(async (form) => {
-        const payload = {
+    const onPickFiles: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+        if (!e.target.files) return
+        setFiles(Array.from(e.target.files))
+    }
+
+    const resetForm = () => {
+        setEditingId(null)
+        setNombre('')
+        setDescripcion('')
+        setEntidades('')
+        setFiles([])
+        setAdjuntosExistentes([])
+    }
+
+    const onEdit = (a: Actuacion) => {
+        setEditingId(a.id)
+        setNombre(a.nombre ?? '')
+        setDescripcion(a.descripcion ?? '')
+        setEntidades(a.entidades ?? '')
+        setAdjuntosExistentes(Array.isArray(a.adjuntos) ? a.adjuntos : [])
+        setFiles([])
+    }
+
+    const onRemoveExisting = (path: string) => {
+        setAdjuntosExistentes(prev => prev.filter(p => p !== path))
+    }
+
+    const onCreate = async () => {
+        if (!caseId || !nombre.trim()) return
+
+        const paths: string[] = []
+        for (const f of files) {
+            const p = await uploadActFile(f, caseId)
+            paths.push(p)
+        }
+
+        await createMut.mutateAsync({
             case_id: caseId,
-            nombre: form.nombre,
-            descripcion: form.descripcion || '',
-            entidades: form.entidades || '',
-        }
-
-        if (editingAct) {
-            await updateMut.mutateAsync({
-                id: editingAct.id,
-                patch: {
-                    nombre: payload.nombre,
-                    descripcion: payload.descripcion,
-                    entidades: payload.entidades,
-                },
-            })
-        } else {
-            await createMut.mutateAsync(payload)
-        }
-
-        setEditingAct(null)
-        reset({ nombre: '', descripcion: '', entidades: '' })
-    })
-
-    const onEdit = (act: Actuacion) => {
-        setEditingAct(act)
-        reset({
-            nombre: act.nombre ?? '',
-            descripcion: act.descripcion ?? '',
-            entidades: act.entidades ?? '',
+            nombre: nombre.trim(),
+            descripcion: descripcion.trim() || undefined,
+            entidades: entidades.trim() || undefined,
+            adjuntos: paths.length ? paths : undefined,
         })
+
+        resetForm()
     }
 
-    const onDelete = async (id: string) => {
-        await deleteMut.mutateAsync(id)
-        if (editingAct?.id === id) {
-            setEditingAct(null)
-            reset({ nombre: '', descripcion: '', entidades: '' })
+    const onUpdate = async () => {
+        if (!editingId) return
+
+        const newPaths: string[] = []
+        if (caseId) {
+            for (const f of files) {
+                const p = await uploadActFile(f, caseId)
+                newPaths.push(p)
+            }
         }
+
+        // adjuntos = existentes (posiblem. removidos) + nuevos
+        const mergedAdjuntos = [...adjuntosExistentes, ...newPaths]
+
+        await updateMut.mutateAsync({
+            id: editingId,
+            patch: {
+                nombre: nombre.trim() || undefined,
+                descripcion: descripcion.trim() || undefined,
+                entidades: entidades.trim() || undefined,
+                adjuntos: mergedAdjuntos.length ? mergedAdjuntos : [],
+            },
+        })
+
+        resetForm()
     }
 
-    const onAddFilesClick = () => fileInputRef.current?.click()
+    const primaryActionDisabled = !nombre.trim() || (editingId ? false : !caseId)
 
-    const onFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(e.target.files ?? [])
-        for (const file of files) {
-            await uploadMut.mutateAsync({ file, caseId })
-        }
-        e.target.value = ''
-    }
-
-    useEffect(() => {
-        if (!open) {
-            setEditingAct(null)
-            reset({ nombre: '', descripcion: '', entidades: '' })
-        }
-    }, [open, reset])
-
-    const saving = isSubmitting || createMut.isPending || updateMut.isPending
-
-    // ======= UI =======
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-            <DialogTitle>{editingAct ? 'Editar actuación' : 'Nueva actuación'}</DialogTitle>
-
+        <Dialog open={open} onClose={() => { onClose(); resetForm() }} maxWidth="md" fullWidth>
+            <DialogTitle>{title ?? 'Actuaciones'}</DialogTitle>
             <DialogContent dividers>
-                {/* Form principal */}
-                <Stack
-                    key={editingAct?.id ?? 'new'}
-                    component="form"
-                    onSubmit={onSubmit}
-                    gap={2}
-                    sx={{ pt: 1 }}
-                >
+                <Stack direction={{ xs: 'column', md: 'row' }} gap={2} sx={{ mb: 2 }}>
                     <TextField
                         label="Nombre"
                         fullWidth
-                        autoFocus
-                        autoComplete="off"
-                        InputLabelProps={{ shrink: true }}
-                        {...register('nombre')}
-                        error={!!errors.nombre}
-                        helperText={errors.nombre?.message}
-                    />
-                    <TextField
-                        label="Descripción"
-                        fullWidth
-                        multiline
-                        minRows={2}
-                        autoComplete="off"
-                        InputLabelProps={{ shrink: true }}
-                        {...register('descripcion')}
+                        value={nombre}
+                        onChange={(e) => setNombre(e.target.value)}
                     />
                     <TextField
                         label="Entidades (opcional)"
                         fullWidth
-                        autoComplete="off"
-                        InputLabelProps={{ shrink: true }}
-                        {...register('entidades')}
+                        value={entidades}
+                        onChange={(e) => setEntidades(e.target.value)}
                     />
                 </Stack>
 
-                <Divider sx={{ my: 2 }} />
+                <TextField
+                    label="Descripción"
+                    fullWidth
+                    multiline
+                    minRows={3}
+                    sx={{ mb: 2 }}
+                    value={descripcion}
+                    onChange={(e) => setDescripcion(e.target.value)}
+                />
 
-                {/* Lista de actuaciones */}
-                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                    <Typography variant="subtitle1">Actuaciones del caso</Typography>
-                    {isLoading && <CircularProgress size={16} />}
+                {/* Adjuntos existentes (solo en edición) */}
+                {editingId && adjuntosExistentes.length > 0 && (
+                    <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mb: 1 }}>
+                        {adjuntosExistentes.map((p) => {
+                            const url = getPublicUrl(p)
+                            return (
+                                <Chip
+                                    key={p}
+                                    label={<a href={url} target="_blank" rel="noreferrer">adjunto</a>}
+                                    onDelete={() => onRemoveExisting(p)}
+                                />
+                            )
+                        })}
+                    </Stack>
+                )}
+
+                <Stack direction="row" gap={2} alignItems="center" sx={{ mb: 2 }}>
+                    <Button component="label" startIcon={<UploadFileIcon />}>
+                        {editingId ? 'Agregar archivos' : 'Adjuntar archivos'}
+                        <input type="file" hidden multiple onChange={onPickFiles} />
+                    </Button>
+                    {files.map((f: File) => <Chip key={f.name} label={f.name} />)}
                 </Stack>
 
                 <List dense>
-                    {(actuaciones ?? []).map((act: Actuacion) => (
-                        <ListItem key={act.id} disableGutters divider>
+                    {acts.map((a: Actuacion) => (
+                        <ListItem
+                            key={a.id}
+                            secondaryAction={
+                                <>
+                                    <IconButton edge="end" onClick={() => onEdit(a)} sx={{ mr: 1 }}>
+                                        <EditIcon />
+                                    </IconButton>
+                                    <IconButton edge="end" onClick={() => deleteMut.mutate(a.id)}>
+                                        <DeleteIcon />
+                                    </IconButton>
+                                </>
+                            }
+                        >
                             <ListItemText
-                                primary={act.nombre}
+                                primary={a.nombre}
                                 secondary={
                                     <>
-                                        {act.descripcion && <span>{act.descripcion}</span>}
-                                        {act.entidades && (
-                                            <span style={{ marginLeft: 8, opacity: 0.7 }}>
-                        · Entidades: {act.entidades}
-                      </span>
+                                        {a.entidades ? `Entidades: ${a.entidades} — ` : ''}
+                                        {a.descripcion ?? ''}
+                                        {(a.adjuntos && a.adjuntos.length > 0) && (
+                                            <>
+                                                {' — Adjuntos: '}
+                                                {a.adjuntos.map((p: string, idx: number, arr: string[]) => {
+                                                    const url = getPublicUrl(p)
+                                                    return (
+                                                        <span key={p}>
+                              <a href={url} target="_blank" rel="noreferrer">archivo{idx + 1}</a>
+                                                            {idx < arr.length - 1 ? ', ' : ''}
+                            </span>
+                                                    )
+                                                })}
+                                            </>
                                         )}
                                     </>
                                 }
                             />
-                            <ListItemSecondaryAction>
-                                <IconButton edge="end" aria-label="edit" onClick={() => onEdit(act)}>
-                                    <EditIcon />
-                                </IconButton>
-                                <IconButton
-                                    edge="end"
-                                    aria-label="delete"
-                                    onClick={() => onDelete(act.id)}
-                                    sx={{ ml: 1 }}
-                                >
-                                    <DeleteIcon color="error" />
-                                </IconButton>
-                            </ListItemSecondaryAction>
                         </ListItem>
                     ))}
-
-                    {(!actuaciones || actuaciones.length === 0) && (
-                        <Typography variant="body2" color="text.secondary" sx={{ px: 1, py: 0.5 }}>
-                            Aún no hay actuaciones registradas.
-                        </Typography>
+                    {acts.length === 0 && (
+                        <ListItem>
+                            <ListItemText primary="Sin actuaciones." />
+                        </ListItem>
                     )}
                 </List>
-
-                <Divider sx={{ my: 2 }} />
-
-                {/* Archivos */}
-                <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                    Archivos del caso
-                </Typography>
-                <input ref={fileInputRef} type="file" multiple hidden onChange={onFilesSelected} />
-                <Button
-                    variant="outlined"
-                    startIcon={<UploadIcon />}
-                    onClick={onAddFilesClick}
-                    disabled={uploadMut.isPending}
-                >
-                    Agregar archivos
-                </Button>
-                {uploadMut.isPending && (
-                    <Typography variant="caption" sx={{ ml: 1 }}>
-                        Subiendo…
-                    </Typography>
-                )}
             </DialogContent>
-
             <DialogActions>
-                <Button onClick={onClose}>Cerrar</Button>
-                <Button onClick={onSubmit} variant="contained" disabled={saving}>
-                    {saving ? (
-                        <CircularProgress size={18} />
-                    ) : editingAct ? (
-                        'Guardar cambios'
-                    ) : (
-                        'Crear actuación'
-                    )}
+                {editingId && (
+                    <Button onClick={resetForm} color="inherit">
+                        Cancelar edición
+                    </Button>
+                )}
+                <Button
+                    variant="contained"
+                    onClick={editingId ? onUpdate : onCreate}
+                    disabled={primaryActionDisabled}
+                >
+                    {editingId ? 'Guardar cambios' : 'Agregar'}
+                </Button>
+                <Button onClick={() => { onClose(); resetForm() }}>
+                    Cerrar
                 </Button>
             </DialogActions>
         </Dialog>
