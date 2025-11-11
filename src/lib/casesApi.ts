@@ -1,97 +1,69 @@
 // src/lib/casesApi.ts
 import { supabase } from '@auth/supabase'
 
+/** ===== Tipos ===== */
 export type LegalCase = {
     id: string
     cedula_demandante: string
-    demandados: string[]
+    demandados: string[]        // persistimos como text[] en BD o serializamos/parseamos
     tipo: 'transito' | 'civil' | 'penal' | 'terrorista'
-    juzgado_tipo: 'regional' | 'departamental' | 'otro'
-    juzgado_nombre: string
+    juzgado: string             // 👈 NUEVO (lo pedía tu UI)
     numero_radicado: string
     assigned_lawyer: string
     created_at: string
     updated_at: string
 }
 
-// Campos antiguos que NO deben viajar al backend
-const LEGACY_KEYS = new Set<string>([
-    'title',
-    'case_type',
-    'status',
-    'client_name',
-    'court',
-    'docket',
-    'opposing_party',
-    'next_hearing_at',
-    'value_amount',
-    'notes',
-    'juzgado', // <- el culpable del 400
-])
+/** ===== Helpers de mapeo (opcional si usas text[]) =====
+ Si en tu tabla guardas text[] real, puedes quitar estos helpers.
+ Si guardas como text y separas por coma, deja estos parse/stringify.
+ */
+const fromRow = (r: any): LegalCase => ({
+    ...r,
+    demandados: Array.isArray(r.demandados)
+        ? r.demandados
+        : (r.demandados ? String(r.demandados).split(',').map((s) => s.trim()).filter(Boolean) : []),
+})
 
-function cleanCasePayload(input: Record<string, unknown>) {
-    const out: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(input)) {
-        if (v === undefined) continue
-        if (LEGACY_KEYS.has(k)) continue
-        if (k === 'demandados') {
-            out.demandados = Array.isArray(v)
-                ? (v as unknown[]).map(String)
-                : (v ? [String(v)] : [])
-            continue
-        }
-        out[k] = v
-    }
-    return out
-}
+const toRow = (c: Omit<LegalCase, 'id' | 'created_at' | 'updated_at'>) => ({
+    ...c,
+    // si tu columna es text[] en Postgres, puedes pasar el array directo
+    // si es text, conviértelo a csv:
+    demandados: Array.isArray(c.demandados) ? c.demandados.join(',') : c.demandados,
+})
 
+/** ===== CRUD ===== */
 export async function listCases(): Promise<LegalCase[]> {
     const { data, error } = await supabase
         .from('cases')
         .select('*')
-        .order('updated_at', { ascending: false })
-    if (error) throw error
+        .order('created_at', { ascending: false })
 
-    return (data ?? []).map((c: any) => ({
-        id: c.id,
-        cedula_demandante: c.cedula_demandante ?? '',
-        demandados: Array.isArray(c.demandados) ? c.demandados : (c.demandados ? [String(c.demandados)] : []),
-        tipo: (c.tipo ?? 'transito') as LegalCase['tipo'],
-        juzgado_tipo: (c.juzgado_tipo ?? 'regional') as LegalCase['juzgado_tipo'],
-        juzgado_nombre: c.juzgado_nombre ?? '',
-        numero_radicado: c.numero_radicado ?? '',
-        assigned_lawyer: c.assigned_lawyer ?? '',
-        created_at: c.created_at ?? '',
-        updated_at: c.updated_at ?? '',
-    }))
+    if (error) throw error
+    return (data ?? []).map(fromRow)
+}
+
+export async function getCase(id: string): Promise<LegalCase | null> {
+    const { data, error } = await supabase.from('cases').select('*').eq('id', id).maybeSingle()
+    if (error) throw error
+    return data ? fromRow(data) : null
 }
 
 export async function createCase(
-    payload: Omit<LegalCase, 'id' | 'created_at' | 'updated_at'>
+    input: Omit<LegalCase, 'id' | 'created_at' | 'updated_at'>
 ): Promise<LegalCase> {
-    const body = cleanCasePayload(payload as unknown as Record<string, unknown>)
-    const { data, error } = await supabase
-        .from('cases')
-        .insert(body)
-        .select('*')
-        .single()
+    const { data, error } = await supabase.from('cases').insert([toRow(input)]).select('*').single()
     if (error) throw error
-    return data as LegalCase
+    return fromRow(data!)
 }
 
 export async function updateCase(
     id: string,
-    patch: Partial<LegalCase>
+    patch: Partial<Omit<LegalCase, 'id' | 'created_at' | 'updated_at'>>
 ): Promise<LegalCase> {
-    const body = cleanCasePayload(patch as Record<string, unknown>)
-    const { data, error } = await supabase
-        .from('cases')
-        .update(body)
-        .eq('id', id)
-        .select('*')
-        .single()
+    const { data, error } = await supabase.from('cases').update(toRow(patch as any)).eq('id', id).select('*').single()
     if (error) throw error
-    return data as LegalCase
+    return fromRow(data!)
 }
 
 export async function deleteCase(id: string) {

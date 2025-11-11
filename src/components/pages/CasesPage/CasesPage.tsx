@@ -1,42 +1,50 @@
-import { useState, useMemo } from 'react'
-import Container from '@mui/material/Container'
-import Paper from '@mui/material/Paper'
-import Stack from '@mui/material/Stack'
-import Button from '@mui/material/Button'
-import Typography from '@mui/material/Typography'
-import IconButton from '@mui/material/IconButton'
-import Tooltip from '@mui/material/Tooltip'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
-import DeleteIcon from '@mui/icons-material/Delete'
-import EditIcon from '@mui/icons-material/Edit'
+// src/components/pages/CasesPage/CasesPage.tsx
+import { useMemo, useState } from 'react'
+import {
+    Box,
+    Button,
+    IconButton,
+    Paper,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Typography,
+} from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
-import DescriptionIcon from '@mui/icons-material/Description'
+import EditIcon from '@mui/icons-material/Edit'
+import DeleteIcon from '@mui/icons-material/Delete'
+import DescriptionIcon from '@mui/icons-material/Description' // abrir actuaciones
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { listCases, createCase, updateCase, deleteCase, type LegalCase } from '@lib/casesApi'
-import CaseForm from '@organisms/cases/CaseForm/CaseForm'
-import ActuationsDialog from '@organisms/cases/ActuationsDialog/ActuationsDialog'
-import {useAuth} from "../../../auth/AuthProvider.tsx";
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+    listCases,
+    createCase,
+    updateCase,
+    deleteCase,
+    type LegalCase,
+} from '@lib/casesApi'
+
+import CaseForm from '@cases/CaseForm/CaseForm'
+import ActuationsDialog from '@cases/ActuationsDialog/ActuationsDialog'
 
 export default function CasesPage() {
-    const { user } = useAuth()
     const qc = useQueryClient()
 
-    const { data, isLoading } = useQuery({
+    // dialogs
+    const [caseFormOpen, setCaseFormOpen] = useState(false)
+    const [editingCase, setEditingCase] = useState<LegalCase | null>(null)
+
+    const [actDlgOpen, setActDlgOpen] = useState(false)
+    const [actCaseId, setActCaseId] = useState<string | null>(null)
+
+    // data
+    const { data: cases = [] } = useQuery({
         queryKey: ['cases'],
         queryFn: listCases,
     })
-
-    const [openForm, setOpenForm] = useState(false)
-    const [editingCase, setEditingCase] = useState<LegalCase | null>(null)
-
-    // Estado para ver/editar ACTUACIONES
-    const [openActs, setOpenActs] = useState(false)
-    const [actsCaseId, setActsCaseId] = useState<string | null>(null)
 
     const createMut = useMutation({
         mutationFn: createCase,
@@ -44,7 +52,8 @@ export default function CasesPage() {
     })
 
     const updateMut = useMutation({
-        mutationFn: ({ id, patch }: { id: string; patch: Partial<LegalCase> }) => updateCase(id, patch),
+        mutationFn: ({ id, patch }: { id: string; patch: Omit<LegalCase, 'id' | 'created_at' | 'updated_at'> }) =>
+            updateCase(id, patch),
         onSuccess: () => qc.invalidateQueries({ queryKey: ['cases'] }),
     })
 
@@ -53,33 +62,50 @@ export default function CasesPage() {
         onSuccess: () => qc.invalidateQueries({ queryKey: ['cases'] }),
     })
 
-    const rows = useMemo(() => data ?? [], [data])
-
-    const onCreate = () => {
+    const onCreateClick = () => {
         setEditingCase(null)
-        setOpenForm(true)
+        setCaseFormOpen(true)
     }
 
-    const onEdit = (row: LegalCase) => {
+    const onEditClick = (row: LegalCase) => {
         setEditingCase(row)
-        setOpenForm(true)
+        setCaseFormOpen(true)
     }
 
-    const onOpenActs = (row: LegalCase) => {
-        setActsCaseId(row.id)
-        setOpenActs(true)
+    const onDeleteClick = async (row: LegalCase) => {
+        if (!confirm('¿Eliminar este caso?')) return
+        await deleteMut.mutateAsync(row.id)
     }
+
+    const onActuationsClick = (row: LegalCase) => {
+        setActCaseId(row.id)
+        setActDlgOpen(true)
+    }
+
+    // submit del formulario de caso
+    const handleSubmit = async (payload: Omit<LegalCase, 'id' | 'created_at' | 'updated_at'>) => {
+        if (editingCase?.id) {
+            await updateMut.mutateAsync({ id: editingCase.id, patch: payload })
+        } else {
+            await createMut.mutateAsync(payload)
+        }
+        setCaseFormOpen(false)
+    }
+
+    const rows = useMemo(() => cases, [cases])
 
     return (
-        <Container maxWidth="lg" sx={{ py: 4 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-                <Typography variant="h5">Mis casos</Typography>
-                <Button startIcon={<AddIcon />} variant="contained" onClick={onCreate}>
+        <Box sx={{ p: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                <Typography variant="h5" fontWeight={700}>
+                    Mis casos
+                </Typography>
+                <Button variant="contained" startIcon={<AddIcon />} onClick={onCreateClick}>
                     Nuevo caso
                 </Button>
-            </Stack>
+            </Box>
 
-            <Paper>
+            <TableContainer component={Paper} elevation={0}>
                 <Table size="small">
                     <TableHead>
                         <TableRow>
@@ -88,76 +114,50 @@ export default function CasesPage() {
                             <TableCell>Tipo</TableCell>
                             <TableCell>Juzgado</TableCell>
                             <TableCell>Nº radicado</TableCell>
-                            <TableCell align="right">Acciones</TableCell>
+                            <TableCell align="center">Acciones</TableCell>
                         </TableRow>
                     </TableHead>
+
                     <TableBody>
-                        {isLoading ? (
-                            <TableRow>
-                                <TableCell colSpan={6}>Cargando…</TableCell>
+                        {rows.map((row) => (
+                            <TableRow key={row.id} hover>
+                                <TableCell>{row.cedula_demandante}</TableCell>
+                                <TableCell>{row.demandados?.join(', ') || '—'}</TableCell>
+                                <TableCell>{row.tipo}</TableCell>
+                                <TableCell>{row.juzgado}</TableCell>
+                                <TableCell>{row.numero_radicado}</TableCell>
+                                <TableCell align="center">
+                                    {/* ⚠️ IMPORTANTE: dentro del <tr> solo <td> y dentro de <td> ponemos los iconos. Nada de texto suelto */}
+                                    <IconButton size="small" onClick={() => onActuationsClick(row)} title="Actuaciones">
+                                        <DescriptionIcon fontSize="small" />
+                                    </IconButton>
+                                    <IconButton size="small" onClick={() => onEditClick(row)} title="Editar">
+                                        <EditIcon fontSize="small" />
+                                    </IconButton>
+                                    <IconButton size="small" onClick={() => onDeleteClick(row)} title="Eliminar">
+                                        <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                </TableCell>
                             </TableRow>
-                        ) : rows.length === 0 ? (
-                            <TableRow>
-                                <TableCell colSpan={6}>No hay casos aún.</TableCell>
-                            </TableRow>
-                        ) : (
-                            rows.map((row) => (
-                                <TableRow key={row.id} hover>
-                                    <TableCell>{row.cedula_demandante || '—'}</TableCell>
-                                    <TableCell>
-                                        {Array.isArray(row.demandados) && row.demandados.length > 0
-                                            ? row.demandados.join(', ')
-                                            : '—'}
-                                    </TableCell>
-                                    <TableCell>{row.tipo}</TableCell>
-                                    <TableCell>{row.juzgado}</TableCell>
-                                    <TableCell>{row.numero_radicado || '—'}</TableCell>
-                                    <TableCell align="right">
-                                        <Tooltip title="Actuaciones">
-                                            <IconButton onClick={() => onOpenActs(row)}>
-                                                <DescriptionIcon />
-                                            </IconButton>
-                                        </Tooltip>
-                                        <Tooltip title="Editar">
-                                            <IconButton onClick={() => onEdit(row)}>
-                                                <EditIcon />
-                                            </IconButton>
-                                        </Tooltip>
-                                        <Tooltip title="Eliminar">
-                                            <IconButton color="error" onClick={() => deleteMut.mutate(row.id)}>
-                                                <DeleteIcon />
-                                            </IconButton>
-                                        </Tooltip>
-                                    </TableCell>
-                                </TableRow>
-                            ))
-                        )}
+                        ))}
                     </TableBody>
                 </Table>
-            </Paper>
+            </TableContainer>
 
-            {/* Formulario crear/editar caso */}
+            {/* Dialogo crear/editar caso */}
             <CaseForm
-                open={openForm}
+                open={caseFormOpen}
                 initial={editingCase ?? undefined}
-                onClose={() => setOpenForm(false)}
-                onSubmit={async (form) => {
-                    if (!user) return
-                    if (editingCase) {
-                        await updateMut.mutateAsync({ id: editingCase.id, patch: form })
-                    } else {
-                        await createMut.mutateAsync(form)
-                    }
-                    setOpenForm(false)
-                }}
+                onClose={() => setCaseFormOpen(false)}
+                onSubmit={handleSubmit}
             />
 
-            {/* Diálogo de Actuaciones */}
+            {/* Dialogo de actuaciones */}
             <ActuationsDialog
-                open={openActs}
-                caseId={actsCaseId ?? ''}
-                onClose={() => setOpenActs(false)}
+                open={actDlgOpen}
+                caseId={actCaseId ?? ''}
+                onClose={() => setActDlgOpen(false)}
             />
-        </Container>
+        </Box>
     )
 }

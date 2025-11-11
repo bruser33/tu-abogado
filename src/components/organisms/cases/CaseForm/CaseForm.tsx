@@ -1,3 +1,4 @@
+// src/components/organisms/cases/CaseForm/CaseForm.tsx
 import { useEffect } from 'react'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
@@ -7,38 +8,33 @@ import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
 import MenuItem from '@mui/material/MenuItem'
-import Stack from '@mui/material/Stack'
-import { useForm, type DefaultValues } from 'react-hook-form'
+import { useForm, type DefaultValues, type SubmitHandler, type Resolver } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { LegalCase } from '@lib/casesApi'
 
-/** === Form schema (coincide con tu LegalCase actual) === */
+/** Form: usamos CSV para demandados en la UI y lo convertimos a string[] */
 const schema = z.object({
-    cedula_demandante: z.string().min(3, 'Requerido'),
-    demandados_csv: z.string().default(''), // string garantizada
+    cedula_demandante: z.string().min(1, 'Requerido'),
+    demandados_csv: z.string().optional().default(''), // con default, Zod infiere string
     tipo: z.enum(['transito', 'civil', 'penal', 'terrorista']),
-    juzgado: z.string().min(2, 'Requerido'),
+    juzgado: z.string().min(1, 'Requerido'),
     numero_radicado: z.string().min(1, 'Requerido'),
 })
 
 type FormData = z.infer<typeof schema>
-const TIPO_OPTS: Array<FormData['tipo']> = ['transito', 'civil', 'penal', 'terrorista']
 
-export default function CaseForm({
-                                     open,
-                                     initial,
-                                     onClose,
-                                     onSubmit,
-                                 }: {
+export default function CaseForm(props: {
     open: boolean
     initial?: Partial<LegalCase>
     onClose: () => void
     onSubmit: (data: Omit<LegalCase, 'id' | 'created_at' | 'updated_at'>) => void
 }) {
+    const { open, initial, onClose, onSubmit } = props
+
     const defaults: DefaultValues<FormData> = {
         cedula_demandante: initial?.cedula_demandante ?? '',
-        demandados_csv: (initial?.demandados ?? []).join(', '),
+        demandados_csv: Array.isArray(initial?.demandados) ? initial!.demandados.join(', ') : '',
         tipo: (initial?.tipo as FormData['tipo']) ?? 'transito',
         juzgado: initial?.juzgado ?? '',
         numero_radicado: initial?.numero_radicado ?? '',
@@ -50,28 +46,22 @@ export default function CaseForm({
         reset,
         formState: { errors, isSubmitting },
     } = useForm<FormData>({
-        // ✅ Fix de tipos: forzamos el resolver para evitar el choque del genérico
-        resolver: zodResolver(schema) as any,
+        // 🔧 Fix de tipos del resolver
+        resolver: zodResolver(schema) as unknown as Resolver<FormData>,
         defaultValues: defaults,
     })
 
     useEffect(() => {
-        reset({
-            cedula_demandante: initial?.cedula_demandante ?? '',
-            demandados_csv: (initial?.demandados ?? []).join(', '),
-            tipo: (initial?.tipo as FormData['tipo']) ?? 'transito',
-            juzgado: initial?.juzgado ?? '',
-            numero_radicado: initial?.numero_radicado ?? '',
-        })
-    }, [initial, reset])
+        reset(defaults)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open])
 
-    const submit = handleSubmit((form) => {
-        const demandados = form.demandados_csv
-            ? form.demandados_csv
-                .split(',')
-                .map((s: string) => s.trim())
-                .filter((s: string) => s.length > 0)
-            : []
+    // 🔧 Tipar como SubmitHandler<FormData> para que case con handleSubmit
+    const submit: SubmitHandler<FormData> = (form) => {
+        const demandados = (form.demandados_csv ?? '')
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0)
 
         const payload: Omit<LegalCase, 'id' | 'created_at' | 'updated_at'> = {
             cedula_demandante: form.cedula_demandante,
@@ -79,24 +69,21 @@ export default function CaseForm({
             tipo: form.tipo,
             juzgado: form.juzgado,
             numero_radicado: form.numero_radicado,
-            // No incluimos assigned_lawyer porque no está en tu LegalCase actual
-        }
+            assigned_lawyer: (initial?.assigned_lawyer ?? '') as string,
+            // estos campos los rellena la BD; se ignoran en insert/update
+            created_at: '' as any,
+            updated_at: '' as any,
+            id: '' as any,
+        } as any
 
         onSubmit(payload)
-    })
+    }
 
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
             <DialogTitle>{initial?.id ? 'Editar caso' : 'Nuevo caso'}</DialogTitle>
             <DialogContent dividers>
-                <Box
-                    sx={{
-                        mt: 0.5,
-                        display: 'grid',
-                        gap: 2,
-                        gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' },
-                    }}
-                >
+                <Box sx={{ display: 'grid', gap: 2, mt: 1 }}>
                     <TextField
                         label="Cédula demandante"
                         fullWidth
@@ -109,11 +96,19 @@ export default function CaseForm({
                         label="Demandados (separados por coma)"
                         fullWidth
                         {...register('demandados_csv')}
-                        placeholder="Ej: Juan Pérez, Empresa XYZ"
+                        error={!!errors.demandados_csv}
+                        helperText={errors.demandados_csv?.message}
                     />
 
-                    <TextField label="Tipo" select fullWidth {...register('tipo')}>
-                        {TIPO_OPTS.map((t) => (
+                    <TextField
+                        select
+                        label="Tipo"
+                        fullWidth
+                        {...register('tipo')}
+                        error={!!errors.tipo}
+                        helperText={errors.tipo?.message}
+                    >
+                        {['transito', 'civil', 'penal', 'terrorista'].map((t) => (
                             <MenuItem key={t} value={t}>
                                 {t}
                             </MenuItem>
@@ -126,7 +121,6 @@ export default function CaseForm({
                         {...register('juzgado')}
                         error={!!errors.juzgado}
                         helperText={errors.juzgado?.message}
-                        placeholder="Ej: Juzgado 3º Civil de Medellín"
                     />
 
                     <TextField
@@ -138,14 +132,11 @@ export default function CaseForm({
                     />
                 </Box>
             </DialogContent>
-
             <DialogActions>
-                <Stack direction="row" gap={1}>
-                    <Button onClick={onClose}>Cancelar</Button>
-                    <Button onClick={submit} variant="contained" disabled={isSubmitting}>
-                        Guardar
-                    </Button>
-                </Stack>
+                <Button onClick={onClose}>Cancelar</Button>
+                <Button variant="contained" disabled={isSubmitting} onClick={handleSubmit(submit)}>
+                    Guardar
+                </Button>
             </DialogActions>
         </Dialog>
     )
