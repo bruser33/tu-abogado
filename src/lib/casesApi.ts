@@ -1,129 +1,100 @@
 // src/lib/casesApi.ts
+import { supabase } from '@auth/supabase'
 
-import {supabase} from "../auth/supabase.ts";
-
-/** ============ Tipos ============ */
 export type LegalCase = {
     id: string
     cedula_demandante: string
     demandados: string[]
     tipo: 'transito' | 'civil' | 'penal' | 'terrorista'
-    juzgado: string
-    juzgado_nivel?: 'regional' | 'departamental' | null
+    juzgado_tipo: 'regional' | 'departamental' | 'otro'
+    juzgado_nombre: string
     numero_radicado: string
+    assigned_lawyer: string
     created_at: string
     updated_at: string
 }
 
-export type Actuacion = {
-    id: string
-    case_id: string
-    nombre: string
-    descripcion: string
-    entidades?: string | null
-    created_at: string
-    updated_at: string
+// Campos antiguos que NO deben viajar al backend
+const LEGACY_KEYS = new Set<string>([
+    'title',
+    'case_type',
+    'status',
+    'client_name',
+    'court',
+    'docket',
+    'opposing_party',
+    'next_hearing_at',
+    'value_amount',
+    'notes',
+    'juzgado', // <- el culpable del 400
+])
+
+function cleanCasePayload(input: Record<string, unknown>) {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(input)) {
+        if (v === undefined) continue
+        if (LEGACY_KEYS.has(k)) continue
+        if (k === 'demandados') {
+            out.demandados = Array.isArray(v)
+                ? (v as unknown[]).map(String)
+                : (v ? [String(v)] : [])
+            continue
+        }
+        out[k] = v
+    }
+    return out
 }
 
-export type ActuacionInsert = Omit<Actuacion, 'id' | 'created_at' | 'updated_at'>
-
-/** ============ Casos ============ */
 export async function listCases(): Promise<LegalCase[]> {
     const { data, error } = await supabase
         .from('cases')
         .select('*')
-        .order('created_at', { ascending: false })
+        .order('updated_at', { ascending: false })
     if (error) throw error
-    return data ?? []
+
+    return (data ?? []).map((c: any) => ({
+        id: c.id,
+        cedula_demandante: c.cedula_demandante ?? '',
+        demandados: Array.isArray(c.demandados) ? c.demandados : (c.demandados ? [String(c.demandados)] : []),
+        tipo: (c.tipo ?? 'transito') as LegalCase['tipo'],
+        juzgado_tipo: (c.juzgado_tipo ?? 'regional') as LegalCase['juzgado_tipo'],
+        juzgado_nombre: c.juzgado_nombre ?? '',
+        numero_radicado: c.numero_radicado ?? '',
+        assigned_lawyer: c.assigned_lawyer ?? '',
+        created_at: c.created_at ?? '',
+        updated_at: c.updated_at ?? '',
+    }))
 }
 
-export async function createCase(payload: Omit<LegalCase, 'id' | 'created_at' | 'updated_at'>) {
-    const { data, error } = await supabase.from('cases').insert(payload).select().single()
+export async function createCase(
+    payload: Omit<LegalCase, 'id' | 'created_at' | 'updated_at'>
+): Promise<LegalCase> {
+    const body = cleanCasePayload(payload as unknown as Record<string, unknown>)
+    const { data, error } = await supabase
+        .from('cases')
+        .insert(body)
+        .select('*')
+        .single()
     if (error) throw error
     return data as LegalCase
 }
 
-export async function updateCase(id: string, patch: Partial<LegalCase>) {
-    const { data, error } = await supabase.from('cases').update(patch).eq('id', id).select().single()
+export async function updateCase(
+    id: string,
+    patch: Partial<LegalCase>
+): Promise<LegalCase> {
+    const body = cleanCasePayload(patch as Record<string, unknown>)
+    const { data, error } = await supabase
+        .from('cases')
+        .update(body)
+        .eq('id', id)
+        .select('*')
+        .single()
     if (error) throw error
     return data as LegalCase
 }
 
 export async function deleteCase(id: string) {
     const { error } = await supabase.from('cases').delete().eq('id', id)
-    if (error) throw error
-}
-
-/** ============ Actuaciones ============ */
-export async function listActuaciones(caseId: string): Promise<Actuacion[]> {
-    const { data, error } = await supabase
-        .from('actuaciones')
-        .select('*')
-        .eq('case_id', caseId)
-        .order('created_at', { ascending: false })
-    if (error) throw error
-    return data ?? []
-}
-
-export async function createActuacion(payload: ActuacionInsert) {
-    const { data, error } = await supabase
-        .from('actuaciones')
-        .insert(payload)
-        .select()
-        .single()
-    if (error) throw error
-    return data as Actuacion
-}
-
-/** NUEVO: actualizar una actuación */
-export async function updateActuacion(id: string, patch: Partial<Actuacion>) {
-    const { data, error } = await supabase
-        .from('actuaciones')
-        .update(patch)
-        .eq('id', id)
-        .select()
-        .single()
-    if (error) throw error
-    return data as Actuacion
-}
-
-export async function deleteActuacion(id: string) {
-    const { error } = await supabase.from('actuaciones').delete().eq('id', id)
-    if (error) throw error
-}
-
-/** ============ Archivos en bucket “actuaciones” ============ */
-
-const BUCKET = 'actuaciones'
-
-export type UploadedFile = {
-    path: string
-    publicUrl: string
-}
-
-/** Sube 1 archivo al path `<caseId>/<timestamp>-<filename>` */
-export async function uploadActuacionFile(
-    caseId: string,
-    file: File,
-): Promise<UploadedFile> {
-    const key = `${caseId}/${Date.now()}-${file.name}`
-    const { data, error } = await supabase.storage.from(BUCKET).upload(key, file, {
-        cacheControl: '3600',
-        upsert: false,
-    })
-    if (error) throw error
-    const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(data.path)
-    return { path: data.path, publicUrl: pub.publicUrl }
-}
-
-/** Lista archivos de una actuación (carpeta = caseId; opcionalmente filtra por prefijo) */
-export async function listActuacionFiles(caseId: string) {
-    const { data, error } = await supabase.storage.from(BUCKET).list(caseId)
-    if (error) throw error
-    return data ?? []
-}
-
-export async function removeActuacionFile(path: string) {
-    const { error } = await supabase.storage.from(BUCKET).remove([path])
     if (error) throw error
 }
