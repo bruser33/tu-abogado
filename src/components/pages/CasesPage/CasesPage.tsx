@@ -14,31 +14,40 @@ import TableRow from '@mui/material/TableRow'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
-import RuleFolderIcon from '@mui/icons-material/RuleFolder'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import DescriptionIcon from '@mui/icons-material/Description'
 
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { listCases, createCase, updateCase, deleteCase, type LegalCase } from '@lib/casesApi'
 import CaseForm from '@organisms/cases/CaseForm/CaseForm'
+import ActuationsDialog from '@organisms/cases/ActuationsDialog/ActuationsDialog'
 import {useAuth} from "../../../auth/AuthProvider.tsx";
-import ActuationsDialog from "@organisms/cases/ActuationsDialog";
 
 export default function CasesPage() {
     const { user } = useAuth()
     const qc = useQueryClient()
-    const { data, isLoading } = useQuery({ queryKey: ['cases'], queryFn: listCases })
-    const [openForm, setOpenForm] = useState(false)
-    const [editing, setEditing] = useState<LegalCase | null>(null)
 
-    const [openActs, setOpenActs] = useState<{ open: boolean; caseId?: string; caseTitle?: string }>({ open: false })
+    const { data, isLoading } = useQuery({
+        queryKey: ['cases'],
+        queryFn: listCases,
+    })
+
+    const [openForm, setOpenForm] = useState(false)
+    const [editingCase, setEditingCase] = useState<LegalCase | null>(null)
+
+    // Estado para ver/editar ACTUACIONES
+    const [openActs, setOpenActs] = useState(false)
+    const [actsCaseId, setActsCaseId] = useState<string | null>(null)
 
     const createMut = useMutation({
         mutationFn: createCase,
         onSuccess: () => qc.invalidateQueries({ queryKey: ['cases'] }),
     })
+
     const updateMut = useMutation({
         mutationFn: ({ id, patch }: { id: string; patch: Partial<LegalCase> }) => updateCase(id, patch),
         onSuccess: () => qc.invalidateQueries({ queryKey: ['cases'] }),
     })
+
     const deleteMut = useMutation({
         mutationFn: deleteCase,
         onSuccess: () => qc.invalidateQueries({ queryKey: ['cases'] }),
@@ -47,12 +56,18 @@ export default function CasesPage() {
     const rows = useMemo(() => data ?? [], [data])
 
     const onCreate = () => {
-        setEditing(null)
+        setEditingCase(null)
         setOpenForm(true)
     }
+
     const onEdit = (row: LegalCase) => {
-        setEditing(row)
+        setEditingCase(row)
         setOpenForm(true)
+    }
+
+    const onOpenActs = (row: LegalCase) => {
+        setActsCaseId(row.id)
+        setOpenActs(true)
     }
 
     return (
@@ -68,11 +83,11 @@ export default function CasesPage() {
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell>Radicado</TableCell>
+                            <TableCell>Cédula demandante</TableCell>
+                            <TableCell>Demandados</TableCell>
                             <TableCell>Tipo</TableCell>
                             <TableCell>Juzgado</TableCell>
-                            <TableCell>Demandante (Cédula)</TableCell>
-                            <TableCell>Demandados</TableCell>
+                            <TableCell>Nº radicado</TableCell>
                             <TableCell align="right">Acciones</TableCell>
                         </TableRow>
                     </TableHead>
@@ -88,15 +103,19 @@ export default function CasesPage() {
                         ) : (
                             rows.map((row) => (
                                 <TableRow key={row.id} hover>
-                                    <TableCell>{row.numero_radicado || '-'}</TableCell>
+                                    <TableCell>{row.cedula_demandante || '—'}</TableCell>
+                                    <TableCell>
+                                        {Array.isArray(row.demandados) && row.demandados.length > 0
+                                            ? row.demandados.join(', ')
+                                            : '—'}
+                                    </TableCell>
                                     <TableCell>{row.tipo}</TableCell>
-                                    <TableCell>{`${row.juzgado_tipo} — ${row.juzgado_nombre}`}</TableCell>
-                                    <TableCell>{row.cedula_demandante || '-'}</TableCell>
-                                    <TableCell>{(row.demandados ?? []).join(', ') || '-'}</TableCell>
+                                    <TableCell>{row.juzgado}</TableCell>
+                                    <TableCell>{row.numero_radicado || '—'}</TableCell>
                                     <TableCell align="right">
                                         <Tooltip title="Actuaciones">
-                                            <IconButton onClick={() => setOpenActs({ open: true, caseId: row.id, caseTitle: row.numero_radicado || row.id })}>
-                                                <RuleFolderIcon />
+                                            <IconButton onClick={() => onOpenActs(row)}>
+                                                <DescriptionIcon />
                                             </IconButton>
                                         </Tooltip>
                                         <Tooltip title="Editar">
@@ -117,26 +136,27 @@ export default function CasesPage() {
                 </Table>
             </Paper>
 
+            {/* Formulario crear/editar caso */}
             <CaseForm
                 open={openForm}
-                initial={editing ?? undefined}
+                initial={editingCase ?? undefined}
                 onClose={() => setOpenForm(false)}
                 onSubmit={async (form) => {
                     if (!user) return
-                    if (editing) {
-                        await updateMut.mutateAsync({ id: editing.id, patch: form })
+                    if (editingCase) {
+                        await updateMut.mutateAsync({ id: editingCase.id, patch: form })
                     } else {
-                        await createMut.mutateAsync({ ...form, assigned_lawyer: user.id })
+                        await createMut.mutateAsync(form)
                     }
                     setOpenForm(false)
                 }}
             />
 
+            {/* Diálogo de Actuaciones */}
             <ActuationsDialog
-                open={openActs.open}
-                caseId={openActs.caseId}
-                title={`Actuaciones — ${openActs.caseTitle ?? ''}`}
-                onClose={() => setOpenActs({ open: false })}
+                open={openActs}
+                caseId={actsCaseId ?? ''}
+                onClose={() => setOpenActs(false)}
             />
         </Container>
     )

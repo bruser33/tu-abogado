@@ -7,20 +7,23 @@ import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
 import MenuItem from '@mui/material/MenuItem'
+import Stack from '@mui/material/Stack'
 import { useForm, type DefaultValues } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { LegalCase } from '@lib/casesApi'
 
+/** === Form schema (coincide con tu LegalCase actual) === */
 const schema = z.object({
-    cedula_demandante: z.string().min(3, 'Requerida'),
-    demandados_text: z.string().optional(), // UI simple: coma-separado
+    cedula_demandante: z.string().min(3, 'Requerido'),
+    demandados_csv: z.string().default(''), // string garantizada
     tipo: z.enum(['transito', 'civil', 'penal', 'terrorista']),
-    juzgado_tipo: z.enum(['regional', 'departamental', 'otro']),
-    juzgado_nombre: z.string().min(2, 'Requerido'),
-    numero_radicado: z.string().min(2, 'Requerido'),
+    juzgado: z.string().min(2, 'Requerido'),
+    numero_radicado: z.string().min(1, 'Requerido'),
 })
+
 type FormData = z.infer<typeof schema>
+const TIPO_OPTS: Array<FormData['tipo']> = ['transito', 'civil', 'penal', 'terrorista']
 
 export default function CaseForm({
                                      open,
@@ -34,46 +37,52 @@ export default function CaseForm({
     onSubmit: (data: Omit<LegalCase, 'id' | 'created_at' | 'updated_at'>) => void
 }) {
     const defaults: DefaultValues<FormData> = {
-        cedula_demandante: '',
-        demandados_text: '',
-        tipo: 'transito',
-        juzgado_tipo: 'regional',
-        juzgado_nombre: '',
-        numero_radicado: '',
+        cedula_demandante: initial?.cedula_demandante ?? '',
+        demandados_csv: (initial?.demandados ?? []).join(', '),
+        tipo: (initial?.tipo as FormData['tipo']) ?? 'transito',
+        juzgado: initial?.juzgado ?? '',
+        numero_radicado: initial?.numero_radicado ?? '',
     }
 
-    const { register, handleSubmit, reset, formState: { errors, isSubmitting } } =
-        useForm<FormData>({ resolver: zodResolver(schema), defaultValues: defaults })
+    const {
+        register,
+        handleSubmit,
+        reset,
+        formState: { errors, isSubmitting },
+    } = useForm<FormData>({
+        // ✅ Fix de tipos: forzamos el resolver para evitar el choque del genérico
+        resolver: zodResolver(schema) as any,
+        defaultValues: defaults,
+    })
 
     useEffect(() => {
-        if (!initial) { reset(defaults); return }
         reset({
-            cedula_demandante: initial.cedula_demandante ?? '',
-            demandados_text: Array.isArray(initial.demandados) ? initial.demandados.join(', ') : '',
-            tipo: (initial.tipo as any) ?? 'transito',
-            juzgado_tipo: (initial.juzgado_tipo as any) ?? 'regional',
-            juzgado_nombre: initial.juzgado_nombre ?? '',
-            numero_radicado: initial.numero_radicado ?? '',
+            cedula_demandante: initial?.cedula_demandante ?? '',
+            demandados_csv: (initial?.demandados ?? []).join(', '),
+            tipo: (initial?.tipo as FormData['tipo']) ?? 'transito',
+            juzgado: initial?.juzgado ?? '',
+            numero_radicado: initial?.numero_radicado ?? '',
         })
     }, [initial, reset])
 
     const submit = handleSubmit((form) => {
-        const demandados = (form.demandados_text ?? '')
-            .split(',')
-            .map(s => s.trim())
-            .filter(Boolean)
+        const demandados = form.demandados_csv
+            ? form.demandados_csv
+                .split(',')
+                .map((s: string) => s.trim())
+                .filter((s: string) => s.length > 0)
+            : []
 
-        // 👇 Enviamos SOLO las propiedades permitidas por Omit<LegalCase,'id'|'created_at'|'updated_at'>
-        onSubmit({
+        const payload: Omit<LegalCase, 'id' | 'created_at' | 'updated_at'> = {
             cedula_demandante: form.cedula_demandante,
             demandados,
             tipo: form.tipo,
-            juzgado_tipo: form.juzgado_tipo,
-            juzgado_nombre: form.juzgado_nombre,
+            juzgado: form.juzgado,
             numero_radicado: form.numero_radicado,
-            // assigned_lawyer lo agrega el caller (create) con user.id
-            assigned_lawyer: (initial?.assigned_lawyer ?? '') as string,
-        })
+            // No incluimos assigned_lawyer porque no está en tu LegalCase actual
+        }
+
+        onSubmit(payload)
     })
 
     return (
@@ -85,72 +94,58 @@ export default function CaseForm({
                         mt: 0.5,
                         display: 'grid',
                         gap: 2,
-                        gridTemplateColumns: { xs: '1fr', md: 'repeat(4, 1fr)' },
+                        gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' },
                     }}
                 >
-                    {/* fila 1 */}
-                    <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 2' } }}>
-                        <TextField
-                            label="Cédula Demandante"
-                            fullWidth
-                            {...register('cedula_demandante')}
-                            error={!!errors.cedula_demandante}
-                            helperText={errors.cedula_demandante?.message}
-                        />
-                    </Box>
-                    <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 1' } }}>
-                        <TextField select label="Tipo de caso" fullWidth {...register('tipo')}>
-                            {['transito', 'civil', 'penal', 'terrorista'].map(t => (
-                                <MenuItem key={t} value={t}>{t}</MenuItem>
-                            ))}
-                        </TextField>
-                    </Box>
-                    <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 1' } }}>
-                        <TextField select label="Juzgado (tipo)" fullWidth {...register('juzgado_tipo')}>
-                            {['regional', 'departamental', 'otro'].map(t => (
-                                <MenuItem key={t} value={t}>{t}</MenuItem>
-                            ))}
-                        </TextField>
-                    </Box>
+                    <TextField
+                        label="Cédula demandante"
+                        fullWidth
+                        {...register('cedula_demandante')}
+                        error={!!errors.cedula_demandante}
+                        helperText={errors.cedula_demandante?.message}
+                    />
 
-                    {/* fila 2 */}
-                    <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 2' } }}>
-                        <TextField
-                            label="Nombre del Juzgado"
-                            fullWidth
-                            {...register('juzgado_nombre')}
-                            error={!!errors.juzgado_nombre}
-                            helperText={errors.juzgado_nombre?.message}
-                        />
-                    </Box>
-                    <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 2' } }}>
-                        <TextField
-                            label="Número de Radicado"
-                            fullWidth
-                            {...register('numero_radicado')}
-                            error={!!errors.numero_radicado}
-                            helperText={errors.numero_radicado?.message}
-                        />
-                    </Box>
+                    <TextField
+                        label="Demandados (separados por coma)"
+                        fullWidth
+                        {...register('demandados_csv')}
+                        placeholder="Ej: Juan Pérez, Empresa XYZ"
+                    />
 
-                    {/* fila 3 */}
-                    <Box sx={{ gridColumn: '1 / -1' }}>
-                        <TextField
-                            label="Demandados (separar por coma)"
-                            fullWidth
-                            multiline
-                            minRows={2}
-                            placeholder="Juan Pérez, ACME Ltda., ..."
-                            {...register('demandados_text')}
-                        />
-                    </Box>
+                    <TextField label="Tipo" select fullWidth {...register('tipo')}>
+                        {TIPO_OPTS.map((t) => (
+                            <MenuItem key={t} value={t}>
+                                {t}
+                            </MenuItem>
+                        ))}
+                    </TextField>
+
+                    <TextField
+                        label="Juzgado"
+                        fullWidth
+                        {...register('juzgado')}
+                        error={!!errors.juzgado}
+                        helperText={errors.juzgado?.message}
+                        placeholder="Ej: Juzgado 3º Civil de Medellín"
+                    />
+
+                    <TextField
+                        label="Número radicado"
+                        fullWidth
+                        {...register('numero_radicado')}
+                        error={!!errors.numero_radicado}
+                        helperText={errors.numero_radicado?.message}
+                    />
                 </Box>
             </DialogContent>
+
             <DialogActions>
-                <Button onClick={onClose}>Cancelar</Button>
-                <Button onClick={submit} variant="contained" disabled={isSubmitting}>
-                    Guardar
-                </Button>
+                <Stack direction="row" gap={1}>
+                    <Button onClick={onClose}>Cancelar</Button>
+                    <Button onClick={submit} variant="contained" disabled={isSubmitting}>
+                        Guardar
+                    </Button>
+                </Stack>
             </DialogActions>
         </Dialog>
     )
